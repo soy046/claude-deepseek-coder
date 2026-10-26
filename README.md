@@ -1,5 +1,7 @@
 # deepseek-coder
 
+**New here?** Start with the [user guide](docs/USER_GUIDE.md): it walks you through installing, setting your API key, and your first run.
+
 A Claude Code plugin that splits work between two models:
 
 - **Claude (your normal session) is the planner.** It explores the code, breaks the goal into steps, writes a spec for each step, reviews the result and runs the tests.
