@@ -44,12 +44,16 @@ if ($cfg.extraInstructions) { $role += "`n`nProject instructions:`n" + $cfg.extr
 $promptFile = [IO.Path]::GetTempFileName()
 [IO.File]::WriteAllText($promptFile, $role, $utf8)
 
-# Everything below applies only to this process and the coder it starts
+# Everything below applies only to this process and the coder it starts.
+# Drop the parent session's variables first: a host app (e.g. the Claude desktop app) passes its own
+# auth and session wiring down, and the coder would use that instead of the DeepSeek key.
+$keepVars = @('CLAUDE_CODE_GIT_BASH_PATH', 'CLAUDE_CODE_SHELL', 'CLAUDE_CODE_SHELL_PREFIX', 'CLAUDE_CODE_USE_POWERSHELL_TOOL')
+Get-ChildItem Env: |
+    Where-Object { $_.Name -match '^(ANTHROPIC_|CLAUDE_CODE_|CLAUDE_AGENT_SDK_|CLAUDECODE$|CLAUDE_PID$)' -and $keepVars -notcontains $_.Name } |
+    ForEach-Object { Remove-Item -LiteralPath "Env:$($_.Name)" }
 $env:DEEPSEEK_CODER_ACTIVE = '1'
 $env:ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic'
 $env:ANTHROPIC_AUTH_TOKEN = $env:DEEPSEEK_API_KEY
-Remove-Item Env:ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-Remove-Item Env:CLAUDECODE -ErrorAction SilentlyContinue
 $env:ANTHROPIC_MODEL = $cfg.model
 $env:ANTHROPIC_DEFAULT_OPUS_MODEL = $cfg.model
 $env:ANTHROPIC_DEFAULT_SONNET_MODEL = $cfg.model

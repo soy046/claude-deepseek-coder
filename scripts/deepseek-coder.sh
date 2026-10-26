@@ -49,11 +49,18 @@ When finished, report: files changed, commands run and their results, and anythi
 EOF
 if [ -n "$EXTRA" ]; then printf '\n\nProject instructions:\n%s\n' "$EXTRA" >> "$PROMPT_FILE"; fi
 
-# Everything below applies only to this process and the coder it starts
+# Everything below applies only to this process and the coder it starts.
+# Drop the parent session's variables first: a host app (e.g. the Claude desktop app) passes its own
+# auth and session wiring down, and the coder would use that instead of the DeepSeek key.
+for v in $(compgen -e); do
+  case "$v" in
+    CLAUDE_CODE_GIT_BASH_PATH | CLAUDE_CODE_SHELL | CLAUDE_CODE_SHELL_PREFIX | CLAUDE_CODE_USE_POWERSHELL_TOOL) ;;
+    ANTHROPIC_* | CLAUDE_CODE_* | CLAUDE_AGENT_SDK_* | CLAUDECODE | CLAUDE_PID) unset "$v" ;;
+  esac
+done
 export DEEPSEEK_CODER_ACTIVE=1
 export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
 export ANTHROPIC_AUTH_TOKEN="$DEEPSEEK_API_KEY"
-unset ANTHROPIC_API_KEY CLAUDECODE
 export ANTHROPIC_MODEL="$MODEL"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
