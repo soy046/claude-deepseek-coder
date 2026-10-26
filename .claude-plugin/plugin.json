@@ -1,0 +1,10 @@
+{
+  "name": "deepseek-coder",
+  "version": "0.1.0",
+  "description": "Claude plans and reviews; DeepSeek writes the code through a headless Claude Code process.",
+  "author": {
+    "name": "soy046"
+  },
+  "repository": "https://github.com/soy046/claude-deepseek-coder",
+  "keywords": ["deepseek", "delegation", "planner", "coding-agent"]
+}

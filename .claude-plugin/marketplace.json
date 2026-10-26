@@ -1,0 +1,14 @@
+{
+  "name": "soy046",
+  "owner": {
+    "name": "soy046"
+  },
+  "description": "Claude Code plugins by soy046",
+  "plugins": [
+    {
+      "name": "deepseek-coder",
+      "source": "./",
+      "description": "Claude plans and reviews; DeepSeek writes the code through a headless Claude Code process."
+    }
+  ]
+}
