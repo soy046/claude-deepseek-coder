@@ -91,8 +91,10 @@ f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): 
    After `maxFixRounds` failed fix rounds: **stop and ask the user.** Show the spec, the latest report and the failing
    checks. Leave the run marker in place. If the user tells you to edit the code yourself, end the run first (marker `stop`).
 
-g. **Show the changes.** Once the step passes review, show the user what DeepSeek changed, in the conversation,
-   before accepting it. Leave out the plugin's own files in `.deepseek-coder/`.
+g. **Show the changes.** Once the step passes review, write a message to the user showing what DeepSeek changed,
+   then continue to (h). The user does not see tool output, so running the commands below is not enough: copy their
+   results into your message text. Do this for every step, in every `approvalMode`, before accepting it.
+   Leave out the plugin's own files in `.deepseek-coder/`.
    - `gitMode` `commit` or `stage`: run `git add -N -- . ":(exclude).deepseek-coder"`, then
      `git diff --name-status -- . ":(exclude).deepseek-coder"` and `git diff --numstat -- . ":(exclude).deepseek-coder"`,
      and show one line per file with its status letter and `+added -removed` counts:
