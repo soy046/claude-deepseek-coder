@@ -25,8 +25,8 @@ SPEC="$(cd "$(dirname "$SPEC")" && pwd)/$(basename "$SPEC")"
 
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(pwd)"
-[ -f "$PROJECT/.claude/deepseek-coder.json" ] ||
-  fail "no .claude/deepseek-coder.json in this project; run /deepseek-coder:delegate so the planner can create it"
+[ -f "$PROJECT/.deepseek-coder/config.json" ] ||
+  fail "no .deepseek-coder/config.json in this project; run /deepseek-coder:delegate so the planner can create it"
 
 get() { node "$SCRIPTS/resolve-config.js" --project "$PROJECT" --get "$1"; }
 MODEL="$(get model)"

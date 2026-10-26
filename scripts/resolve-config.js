@@ -48,7 +48,7 @@ function positiveInt(value, name) {
 }
 
 function resolve(projectDir) {
-  const configPath = path.join(projectDir, '.claude', 'deepseek-coder.json');
+  const configPath = path.join(projectDir, '.deepseek-coder', 'config.json');
   let file = {};
   const configFound = fs.existsSync(configPath);
   if (configFound) {

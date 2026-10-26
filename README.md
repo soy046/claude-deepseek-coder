@@ -50,9 +50,9 @@ Never put the key in the project config or commit it.
 
 The plugin also has a skill, so Claude may start the same workflow on its own when you ask it to implement something. It follows the same config.
 
-The first time you use it in a project, Claude proposes a `.claude/deepseek-coder.json` and writes it only after you approve it.
+The first time you use it in a project, Claude proposes a `.deepseek-coder/config.json` and writes it only after you approve it.
 
-## Configuration: `.claude/deepseek-coder.json`
+## Configuration: `.deepseek-coder/config.json`
 
 ```json
 {
@@ -82,15 +82,17 @@ Precedence for `model` and `maxTurns`: config file, then the `DEEPSEEK_MODEL` / 
 
 Whether to commit this file is up to each project; the plugin does not touch `.gitignore`.
 
+The config and the run folders live in `.deepseek-coder/` rather than `.claude/` because Claude Code asks for permission on every write inside `.claude/`, even with allow rules, which would interrupt every run.
+
 ## What happens in a run
 
 1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
-2. **Plan.** Claude splits the goal into steps and creates a run folder `.claude/deepseek-plans/<date-time>-<slug>/`.
+2. **Plan.** Claude splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/`.
 3. **Each step.** Claude writes `step-NN.md`, runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md` and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
 4. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
 5. **Finish.** Claude summarizes the run. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
 
-Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run folder. Add `.claude/deepseek-plans/` to `.gitignore` if you don't want them committed.
+Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
 
 ## Safety
 
@@ -105,8 +107,8 @@ Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run 
 |---|---|
 | `DEEPSEEK_API_KEY is not set` | Set the variable (see Install) and restart Claude Code. |
 | `401` / authentication error in the coder log | The key is wrong or expired. Check it in the DeepSeek console. |
-| `no .claude/deepseek-coder.json in this project` | Run `/deepseek-coder:delegate`; Claude will propose the config. |
-| `config error: ...` | Fix the named key in `.claude/deepseek-coder.json`. |
+| `no .deepseek-coder/config.json in this project` | Run `/deepseek-coder:delegate`; Claude will propose the config. |
+| `config error: ...` | Fix the named key in `.deepseek-coder/config.json`. |
 | Claude can't edit a file: "a delegation run is active" | Expected during a run. If no run is active, run `/deepseek-coder:reset`. |
 | Coder `STATUS: error_max_turns` | The step was too big. Raise `maxTurns` or ask Claude to split the step. |
 | Coder says a command was denied | Add it to `allowedCommands`. |

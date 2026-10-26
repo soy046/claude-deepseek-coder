@@ -18,7 +18,7 @@ try {
 }
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
-const plansDir = path.join(projectDir, '.claude', 'deepseek-plans');
+const plansDir = path.join(projectDir, '.deepseek-coder', 'plans');
 const markerPath = path.join(plansDir, '.run-active');
 if (!fs.existsSync(markerPath)) process.exit(0);
 
@@ -53,7 +53,7 @@ const norm = (p) => {
 };
 const t = norm(target);
 const plans = norm(plansDir) + path.sep;
-const config = norm(path.join(projectDir, '.claude', 'deepseek-coder.json'));
+const config = norm(path.join(projectDir, '.deepseek-coder', 'config.json'));
 if (t.startsWith(plans) || t === config) process.exit(0);
 
 process.stderr.write(

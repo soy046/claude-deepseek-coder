@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Manages the "delegation run active" marker that the edit guard hook reads.
-// The marker lives at <project>/.claude/deepseek-plans/.run-active.
+// The marker lives at <project>/.deepseek-coder/plans/.run-active.
 //
 // Usage (run from the project root):
 //   node run-marker.js start <runDir>   create the marker for a run
@@ -16,7 +16,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const projectDir = process.cwd();
-const markerPath = path.join(projectDir, '.claude', 'deepseek-plans', '.run-active');
+const markerPath = path.join(projectDir, '.deepseek-coder', 'plans', '.run-active');
 
 function expiryMinutes() {
   try {

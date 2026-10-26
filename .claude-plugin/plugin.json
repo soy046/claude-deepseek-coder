@@ -1,6 +1,6 @@
 {
   "name": "deepseek-coder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude plans and reviews; DeepSeek writes the code through a headless Claude Code process.",
   "author": {
     "name": "soy046"

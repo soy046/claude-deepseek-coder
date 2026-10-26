@@ -20,8 +20,8 @@ $SpecFile = (Resolve-Path -LiteralPath $SpecFile).Path
 
 $scripts = $PSScriptRoot
 $projectDir = (Get-Location).Path
-if (-not (Test-Path -LiteralPath (Join-Path $projectDir '.claude\deepseek-coder.json'))) {
-    Fail 'no .claude/deepseek-coder.json in this project; run /deepseek-coder:delegate so the planner can create it'
+if (-not (Test-Path -LiteralPath (Join-Path $projectDir '.deepseek-coder\config.json'))) {
+    Fail 'no .deepseek-coder/config.json in this project; run /deepseek-coder:delegate so the planner can create it'
 }
 
 # PowerShell 5.1 talks to native programs in the ANSI code page by default; force UTF-8 both ways

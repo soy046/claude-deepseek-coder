@@ -26,7 +26,7 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 1. **Existing run.** Run the marker `status`. If it prints `active`, another run is in progress or crashed recently:
    tell the user and ask whether to stop or to clear it (`stop`) and continue. `expired` or `none` means continue.
-2. **Config.** If `.claude/deepseek-coder.json` does not exist:
+2. **Config.** If `.deepseek-coder/config.json` does not exist:
    - Inspect the project (package.json scripts, pyproject.toml, Makefile, etc.) to find its test, lint and build commands.
    - Propose a complete config to the user showing every key: `allowedCommands` (what you found), `model`, `maxTurns`,
      `extraInstructions`, `approvalMode` (`plan` | `step` | `auto`), `gitMode` (`commit` | `stage` | `none`),
@@ -41,7 +41,7 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
    - Not a repo and `gitMode` is `commit` or `stage`: ask the user whether they want to work with git.
      - Yes: ask permission to run `git init`, then run it. Then ask whether to commit the existing files
        as an initial commit before any step runs, and do what they say.
-     - No: set `"gitMode": "none"` in `.claude/deepseek-coder.json` and continue without git.
+     - No: set `"gitMode": "none"` in `.deepseek-coder/config.json` and continue without git.
    - A repo with uncommitted changes (`git status --porcelain` is not empty) and `gitMode` `commit` or `stage`:
      tell the user those changes would mix with DeepSeek's and ask how to proceed before going on.
 
@@ -49,7 +49,7 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 1. Explore just enough of the codebase to plan the goal.
 2. Split the goal into small, ordered steps. Each step should be finishable by DeepSeek within its `maxTurns`.
-3. Create the run folder `.claude/deepseek-plans/<YYYY-MM-DD-HHMM>-<slug>/` (local time; slug is 2-5 kebab-case words from the goal).
+3. Create the run folder `.deepseek-coder/plans/<YYYY-MM-DD-HHMM>-<slug>/` (local time; slug is 2-5 kebab-case words from the goal).
 4. Follow `approvalMode`:
    - `plan`: show the numbered step list (title and one-line scope each) and wait for the user's approval. Revise if asked.
    - `step`: show the step list for information, then ask approval before every delegation (section 3b).
@@ -111,6 +111,6 @@ g. **Accept.**
 
 ## Rules
 
-- Never edit source files yourself during a run. Only the run folder and `.claude/deepseek-coder.json` are yours.
+- Never edit source files yourself during a run. Only the run folder and `.deepseek-coder/config.json` are yours.
 - Never delete run folders or spec files.
 - Never write the API key into a file or a command.
