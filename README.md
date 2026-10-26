@@ -89,8 +89,9 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
 2. **Plan.** Claude splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/`.
 3. **Each step.** Claude writes `step-NN.md`, runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md` and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
-4. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
-5. **Finish.** Claude summarizes the run. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
+4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts) and the full diff in the conversation, leaving out the plugin's own `.deepseek-coder/` files. With `gitMode: none` it lists the changed files only.
+5. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
+6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
 
 Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
 

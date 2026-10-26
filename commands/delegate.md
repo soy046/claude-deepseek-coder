@@ -80,7 +80,7 @@ d. **Read the result.** Exit 3: stop the run and tell the user the recursion gua
    Exit 1 or `ERROR: true`: count it as a failed attempt and go to (f).
 
 e. **Review.** Never trust DeepSeek's report alone.
-   - `gitMode` `commit` or `stage`: run `git add -N .` then `git diff` (earlier accepted steps are committed or staged,
+   - `gitMode` `commit` or `stage`: run `git add -N -- . ":(exclude).deepseek-coder"` then `git diff` (earlier accepted steps are committed or staged,
      so the diff is this step only).
    - `gitMode` `none`: read every file the coder reports changing.
    - Check every acceptance criterion and run the spec's verify commands yourself.
@@ -91,22 +91,44 @@ f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): 
    After `maxFixRounds` failed fix rounds: **stop and ask the user.** Show the spec, the latest report and the failing
    checks. Leave the run marker in place. If the user tells you to edit the code yourself, end the run first (marker `stop`).
 
-g. **Accept.**
-   - `commit`: `git add -A`, then commit with a Conventional Commits message (`<type>(<scope>): <summary>`, optional body),
+g. **Show the changes.** Once the step passes review, show the user what DeepSeek changed, in the conversation,
+   before accepting it. Leave out the plugin's own files in `.deepseek-coder/`.
+   - `gitMode` `commit` or `stage`: run `git add -N -- . ":(exclude).deepseek-coder"`, then
+     `git diff --name-status -- . ":(exclude).deepseek-coder"` and `git diff --numstat -- . ":(exclude).deepseek-coder"`,
+     and show one line per file with its status letter and `+added -removed` counts:
+
+     ```
+     Step NN changed 2 files:
+       M src/math.js        +4 -1
+       A src/util.js        +12 -0
+     ```
+     Then run `git diff -- . ":(exclude).deepseek-coder"` and show the full diff in a ```diff code block, without trimming it.
+   - `gitMode` `none`: show the list of files DeepSeek reports changing, one per line, with no code.
+
+h. **Accept.**
+   - `commit`: `git add -A -- . ":(exclude).deepseek-coder/plans/.run-active"`, then commit with a Conventional Commits message (`<type>(<scope>): <summary>`, optional body),
      ending with exactly these trailers, where `<model>` is the `MODEL` line from the coder output:
 
      ```
      Co-Authored-By: Claude <noreply@anthropic.com>
      Co-Authored-By: DeepSeek <model> <noreply@deepseek.com>
      ```
-   - `stage`: `git add -A`.
+   - `stage`: `git add -A -- . ":(exclude).deepseek-coder/plans/.run-active"`.
    - `none`: nothing.
 
 ## 4. Finish
 
 1. End the run: marker `stop`.
 2. Summarize: each step, what DeepSeek implemented, which fix rounds were needed and why, final test results,
-   and the run folder path.
+   and the run folder path. Include a combined list of every file changed in the run (outside `.deepseek-coder/`),
+   one line per file with its status letter, `+added -removed` totals and the step numbers that touched it
+   (with `gitMode` `none`: file names and step numbers only):
+
+   ```
+   Files changed in this run:
+     M src/math.js        +9 -2   (steps 01, 02)
+     A src/util.js        +12 -0  (step 02)
+   ```
 3. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
 
 ## Rules
