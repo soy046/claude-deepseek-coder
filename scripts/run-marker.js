@@ -3,7 +3,7 @@
 // The marker lives at <project>/.deepseek-coder/plans/.run-active.
 //
 // Usage (run from the project root):
-//   node run-marker.js start <runDir>   create the marker for a run
+//   node run-marker.js start <runDir>   create the marker for a run, and <runDir>/run.json if missing
 //   node run-marker.js touch            refresh the marker's activity time (no-op without a marker)
 //   node run-marker.js stop             remove the marker
 //   node run-marker.js status           print active / expired / none
@@ -55,6 +55,24 @@ switch (cmd) {
     const now = new Date().toISOString();
     writeMarker({ startedAt: now, updatedAt: now, runDir });
     process.stdout.write(`Run marker created: ${markerPath}\n`);
+    try {
+      const runJson = path.join(path.resolve(projectDir, runDir), 'run.json');
+      let keep = false;
+      if (fs.existsSync(runJson)) {
+        try {
+          const info = JSON.parse(fs.readFileSync(runJson, 'utf8'));
+          keep = info !== null && typeof info === 'object' && !Array.isArray(info);
+        } catch {
+          keep = false;
+        }
+      }
+      if (!keep) {
+        fs.mkdirSync(path.dirname(runJson), { recursive: true });
+        fs.writeFileSync(runJson, JSON.stringify({ startedAt: now }, null, 2));
+      }
+    } catch {
+      // Recording run.json is best-effort; it must not change start's output or exit code
+    }
     break;
   }
   case 'touch': {

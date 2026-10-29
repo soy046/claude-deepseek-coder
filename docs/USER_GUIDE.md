@@ -81,13 +81,13 @@ add a subtract(a, b) function to src/math.js with a test
 /deepseek-coder:delegate add a subtract(a, b) function to src/math.js with a test
 ```
 
-**2. Claude proposes a config.** The first time you use the plugin in a project, there is no `.deepseek-coder/config.json`. Claude inspects the project to find its test, lint and build commands, then shows you a complete config — every key, with `allowedCommands` filled in from what it found. It writes the file only after you approve it, with any changes you ask for.
+**2. Claude proposes a config.** The first time you use the plugin in a project, there is no `.deepseek-coder/config.json`. Claude inspects the project to find its test, lint and build commands, then shows you a complete config — every key, with `allowedCommands` filled in from what it found. It writes the file only after you approve it, with any changes you ask for. Then, while `deepseekPricing` is not set, Claude asks which currency you want prices in, or whether to skip it this time. It looks up DeepSeek's prices for your model, asks you for any it couldn't find, and writes them only after you confirm them.
 
 **3. Claude asks its questions and plans.** Claude explores the code. It shows you what it found there, such as where `src/math.js` exports its functions and which command runs the tests, and asks you to confirm. Then it asks about every choice the goal leaves open instead of guessing. In this example, that could be whether `subtract` should check its arguments' types and which test cases to add. If an answer is vague, Claude offers concrete options and asks again. When nothing is open, it splits the goal into small ordered steps, creates a run folder at `.deepseek-coder/plans/<date-time>-<slug>/`, and records your answers in `plan.md` there. It shows you the numbered step list. In this example the plan had one step.
 
 **4. You review the spec.** Claude writes `step-01.md` in the run folder and, with the default `approvalMode` of `step`, shows you the whole spec in the conversation. If you ask for changes, it updates the spec and shows it again. Nothing goes to DeepSeek until you approve that version.
 
-**5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. In this run DeepSeek took 7 turns and needed no fix rounds.
+**5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. The coder's output ends with a `USAGE` line with the tokens DeepSeek used, and an estimated cost when prices are set. In this run DeepSeek took 7 turns and needed no fix rounds.
 
 **6. Claude shows what changed.** DeepSeek's own report is never trusted on its own: Claude reads the diff and runs the tests itself. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
 
@@ -126,6 +126,8 @@ Files changed in this run:
   M test/math.test.js   +5 -1   (step 01)
 ```
 
+The summary ends with two usage tables. The first lists DeepSeek's tokens for each coder run, with a total and, when prices are set, an estimated cost. The second is a best-effort count of Claude's own tokens, read from your session's transcript: once for the messages since the run started, and once for the whole session.
+
 **9. Claude asks about pushing.** In `commit` mode, if the repository has a remote, Claude asks whether to push. It never pushes on its own.
 
 That's a whole run. Most of the time, your job is to answer Claude's questions, approve each spec, and read the changes as each step comes in.
@@ -143,7 +145,8 @@ Settings live in `.deepseek-coder/config.json` in your project. Here is an examp
   "approvalMode": "step",
   "gitMode": "commit",
   "maxFixRounds": 3,
-  "markerExpiryMinutes": 30
+  "markerExpiryMinutes": 30,
+  "deepseekPricing": null
 }
 ```
 
@@ -159,12 +162,15 @@ These are all the keys:
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
+| `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
 
 When Claude proposes the config, it fills in `allowedCommands` from the project's test, lint and build commands; you can add or remove entries before approving. If the key is left out, the default is `[]`, and DeepSeek can then run no shell commands. Use `extraInstructions` for project rules the coder should always follow, such as a style guide or libraries to avoid; those rules are appended to its system prompt.
 
 **`approvalMode`.** Use `step` (the default) when you want to read and approve every spec before DeepSeek sees it, including the fix specs Claude writes when a step needs corrections. Use `plan` when you want to check the step list once and then let the run go. Use `auto` only when you trust the goal and the project knows how to test itself, because there are no stops at all.
 
 **`gitMode`.** Use `commit` (the default) to get one Conventional Commit per accepted step. Use `stage` if you want to review and commit the changes yourself; Claude runs `git add -A` and stops there. Use `none` for a folder that isn't a git repository; DeepSeek's changes are not committed or staged.
+
+**`deepseekPricing`.** Leave it `null` and Claude asks for it at the start of each run; you can skip it. Prices are per 1M tokens: `input` is input on a cache miss, `cacheHit` is input on a cache hit, and `output` is output. `currency` is a 3-letter code such as `USD` or `CNY`. A set value looks like `{"input": 0.27, "cacheHit": 0.07, "output": 1.1, "currency": "USD"}` (example numbers, not current prices). Claude only writes prices you have confirmed.
 
 **`allowedCommands`.** These are the only shell commands DeepSeek may run. Entries are prefix matches, so `"npm test"` also allows `npm test -- --watch=false`, but not `npm run test`. Use commands that match your project:
 
@@ -226,7 +232,7 @@ Claude also follows some rules of its own during a run: it never deletes run fol
 
 **What does it cost?**
 
-DeepSeek bills your DeepSeek account. Claude usage is only planning and review. The `total_cost_usd` figure in the JSON log is computed at Claude prices, so it is not your DeepSeek cost — check the DeepSeek console for that.
+DeepSeek bills your DeepSeek account; Claude's planning and review count against your Claude plan. At the end of each run Claude shows both: DeepSeek's tokens for every coder run, with an estimated cost when `deepseekPricing` is set, and a best-effort count of Claude's own tokens. You can print the DeepSeek table at any time by running `node "<plugin folder>/scripts/usage.js" <run folder>` from your project root. Don't use `total_cost_usd` in the JSON log: it is computed at Claude prices and adds up across fix rounds.
 
 **How do I change the DeepSeek model?**
 

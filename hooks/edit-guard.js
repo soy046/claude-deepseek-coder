@@ -2,6 +2,7 @@
 // PreToolUse hook for Edit|Write|NotebookEdit.
 // While a delegation run is active, the planner may only edit the spec folder and the config file;
 // source edits are DeepSeek's job. The coder process (DEEPSEEK_CODER_ACTIVE=1) is never blocked.
+// It also records the planner's transcript path in the run folder's run.json (used by usage.js claude).
 
 'use strict';
 const fs = require('fs');
@@ -52,6 +53,26 @@ const norm = (p) => {
   return process.platform === 'win32' ? r.toLowerCase() : r;
 };
 const t = norm(target);
+
+function recordTranscript() {
+  try {
+    if (typeof marker.runDir !== 'string' || !marker.runDir) return;
+    if (typeof input.transcript_path !== 'string' || !input.transcript_path) return;
+    const runJson = path.join(path.resolve(projectDir, marker.runDir), 'run.json');
+    if (!fs.existsSync(runJson)) return;
+    const info = JSON.parse(fs.readFileSync(runJson, 'utf8'));
+    if (info === null || typeof info !== 'object' || Array.isArray(info)) return;
+    if (typeof info.transcriptPath === 'string' && info.transcriptPath) return;
+    fs.writeFileSync(runJson, JSON.stringify({ ...info, transcriptPath: input.transcript_path }, null, 2));
+  } catch {
+    // Recording the transcript is best-effort
+  }
+}
+
+if (typeof marker.runDir === 'string' && marker.runDir && t.startsWith(norm(marker.runDir) + path.sep)) {
+  recordTranscript();
+}
+
 const plans = norm(plansDir) + path.sep;
 const config = norm(path.join(projectDir, '.deepseek-coder', 'config.json'));
 if (t.startsWith(plans) || t === config) process.exit(0);

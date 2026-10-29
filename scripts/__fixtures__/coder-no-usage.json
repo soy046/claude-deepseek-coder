@@ -1,0 +1,8 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "num_turns": 1,
+  "session_id": "no-usage",
+  "result": "Done."
+}

@@ -1,0 +1,46 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "num_turns": 5,
+  "session_id": "8933c48e-3848-4887-94d1-698f355c9083",
+  "usage": {
+    "input_tokens": 1164,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 137856,
+    "output_tokens": 791,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "deepseek-flash[1m]": {
+      "inputTokens": 31088,
+      "outputTokens": 17801,
+      "thinkingTokens": 0,
+      "cacheReadInputTokens": 546816,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.873873,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "deepseek-flash[1m]",
+      "provider": "firstParty",
+      "costBasis": "unknown"
+    }
+  },
+  "result": "Both fixes applied."
+}
