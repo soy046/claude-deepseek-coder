@@ -21,8 +21,10 @@ Run every command below from the project root. Plugin scripts:
 | Run marker | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-marker.js" <start "<run folder>" \| stop \| status>` |
 | Coder, Windows | `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.ps1" -SpecFile "<spec>" [-ResumeSession <id>]` |
 | Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>]` |
+| Usage tables | `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" "<run folder>"` (DeepSeek) and `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" claude "<run folder>"` (Claude) |
 
-The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR` and `LOG` lines.
+The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR`, `USAGE`,
+`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines.
 Exit code 0 means the run finished, 1 means it failed (including hitting the turn limit), 3 means the recursion guard refused it.
 
 ## 1. Preflight
@@ -33,13 +35,27 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
    - Inspect the project (package.json scripts, pyproject.toml, Makefile, etc.) to find its test, lint and build commands.
    - Propose a complete config to the user showing every key: `allowedCommands` (what you found), `model`, `maxTurns`,
      `extraInstructions`, `approvalMode` (`plan` | `step` | `auto`), `gitMode` (`commit` | `stage` | `none`),
-     `maxFixRounds`, `markerExpiryMinutes`. Show the plugin defaults for the others
-     (run the resolve-config command to see them). Explain that `allowedCommands` entries are prefix matches and are
-     the only shell commands DeepSeek may run.
+     `maxFixRounds`, `markerExpiryMinutes`, `deepseekPricing` (propose `null`; step 4 sets it). Show the plugin
+     defaults for the others (run the resolve-config command to see them). Explain that `allowedCommands` entries are
+     prefix matches and are the only shell commands DeepSeek may run.
    - Write the file only after the user approves it, with any changes they ask for.
 3. **Resolve.** Run the resolve-config command. If it fails, show the error and stop.
    Use its `approvalMode`, `gitMode`, `maxFixRounds` for the rest of the run.
-4. **Git.** Run `git rev-parse --is-inside-work-tree`.
+4. **Pricing.** If the resolved `deepseekPricing` is `null`:
+   - Ask the user which currency to record DeepSeek prices in (3 uppercase letters, e.g. `USD` or `CNY`), or whether
+     to skip pricing for this run. Skip: leave `deepseekPricing` as it is and continue. The usage tables then show
+     tokens without a cost, and you ask again in the next run.
+   - Look up DeepSeek's current API prices for the resolved `model` in that currency on DeepSeek's own pricing page:
+     per 1M input tokens on a cache miss, per 1M input tokens on a cache hit, and per 1M output tokens.
+     Never use remembered or estimated prices.
+   - For every price you could not find, or all three if you cannot look them up, ask the user. Keep asking until
+     all three prices are known.
+   - Show the user the three prices, the currency, the model they apply to, and the source of each (the page URL,
+     or "you" for a price the user gave). Write them to `.deepseek-coder/config.json` as
+     `"deepseekPricing": {"input": <cache miss>, "cacheHit": <cache hit>, "output": <output>, "currency": "<code>"}`
+     only after the user confirms or corrects them. Then run the resolve-config command again; if it fails, show the
+     error and stop.
+5. **Git.** Run `git rev-parse --is-inside-work-tree`.
    - Not a repo and `gitMode` is `none`: continue without git.
    - Not a repo and `gitMode` is `commit` or `stage`: ask the user whether they want to work with git.
      - Yes: ask permission to run `git init`, then run it. Then ask whether to commit the existing files
@@ -130,8 +146,9 @@ h. **Accept.**
 
 ## 4. Finish
 
-1. End the run: marker `stop`.
-2. Summarize: each step, what DeepSeek implemented, which fix rounds were needed and why, final test results,
+1. **Usage.** Run both usage-table commands with the run folder and keep their output.
+2. End the run: marker `stop`.
+3. Summarize: each step, what DeepSeek implemented, which fix rounds were needed and why, final test results,
    and the run folder path. Include a combined list of every file changed in the run (outside `.deepseek-coder/`),
    one line per file with its status letter, `+added -removed` totals and the step numbers that touched it
    (with `gitMode` `none`: file names and step numbers only):
@@ -141,7 +158,9 @@ h. **Accept.**
      M src/math.js        +9 -2   (steps 01, 02)
      A src/util.js        +12 -0  (step 02)
    ```
-3. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
+   Then copy the output of both usage-table commands from item 1 into the summary unchanged, each in its own
+   code block: first the DeepSeek table, then the Claude table.
+4. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
 
 ## Rules
 
