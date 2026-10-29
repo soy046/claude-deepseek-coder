@@ -5,7 +5,7 @@
 //
 // Usage:
 //   node resolve-config.js [--project <dir>]              full resolved config as JSON
-//   node resolve-config.js [--project <dir>] --get <key>  one value; arrays print one item per line
+//   node resolve-config.js [--project <dir>] --get <key>  one value; arrays print one item per line, objects and null as JSON
 // Extra computed keys for --get: allowedTools, smallModel
 
 'use strict';
@@ -21,6 +21,7 @@ const DEFAULTS = {
   gitMode: 'commit',
   maxFixRounds: 3,
   markerExpiryMinutes: 30,
+  deepseekPricing: null,
 };
 const APPROVAL_MODES = ['plan', 'step', 'auto'];
 const GIT_MODES = ['commit', 'stage', 'none'];
@@ -45,6 +46,24 @@ function positiveInt(value, name) {
   const n = typeof value === 'string' ? Number(value) : value;
   if (!Number.isInteger(n) || n < 1) fail(`${name} must be a positive integer, got ${JSON.stringify(value)}`);
   return n;
+}
+
+function pricing(value) {
+  if (value === null) return null;
+  const PRICE_KEYS = ['input', 'cacheHit', 'output'];
+  const keys = PRICE_KEYS.concat('currency');
+  const valid =
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === keys.length &&
+    keys.every((k) => Object.prototype.hasOwnProperty.call(value, k)) &&
+    PRICE_KEYS.every((k) => typeof value[k] === 'number' && Number.isFinite(value[k]) && value[k] >= 0) &&
+    typeof value.currency === 'string' &&
+    /^[A-Z]{3}$/.test(value.currency);
+  if (!valid) {
+    fail('deepseekPricing must be null or {"input", "cacheHit", "output", "currency"}: prices are numbers >= 0 per 1M tokens and currency is 3 uppercase letters, e.g. "USD"');
+  }
+  return value;
 }
 
 function resolve(projectDir) {
@@ -72,6 +91,7 @@ function resolve(projectDir) {
     gitMode: file.gitMode ?? DEFAULTS.gitMode,
     maxFixRounds: positiveInt(file.maxFixRounds ?? DEFAULTS.maxFixRounds, 'maxFixRounds'),
     markerExpiryMinutes: positiveInt(file.markerExpiryMinutes ?? DEFAULTS.markerExpiryMinutes, 'markerExpiryMinutes'),
+    deepseekPricing: pricing(file.deepseekPricing ?? DEFAULTS.deepseekPricing),
   };
 
   if (!Array.isArray(cfg.allowedCommands) || cfg.allowedCommands.some((c) => typeof c !== 'string' || !c.trim())) {
@@ -96,7 +116,7 @@ const cfg = resolve(path.resolve(args.project));
 if (args.get) {
   if (!(args.get in cfg)) fail(`unknown key "${args.get}"`);
   const v = cfg[args.get];
-  process.stdout.write(Array.isArray(v) ? v.join('\n') : String(v));
+  process.stdout.write(Array.isArray(v) ? v.join('\n') : typeof v === 'object' ? JSON.stringify(v) : String(v));
 } else {
   process.stdout.write(JSON.stringify(cfg, null, 2) + '\n');
 }
