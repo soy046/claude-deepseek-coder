@@ -2,6 +2,8 @@
 
 **New here?** Start with the [user guide](docs/USER_GUIDE.md): it walks you through installing, setting your API key, and your first run.
 
+**Working on the plugin itself?** See the [developer guide](docs/DEVELOPER_GUIDE.md) for the code layout, the run folder files and how to run the tests.
+
 A Claude Code plugin that splits work between two models:
 
 - **Claude (your normal session) is the planner.** It explores the code, breaks the goal into steps, writes a spec for each step, reviews the result and runs the tests.
@@ -65,7 +67,8 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
   "approvalMode": "step",
   "gitMode": "commit",
   "maxFixRounds": 3,
-  "markerExpiryMinutes": 30
+  "markerExpiryMinutes": 30,
+  "deepseekPricing": null
 }
 ```
 
@@ -79,6 +82,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
+| `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
 
 Precedence for `model` and `maxTurns`: config file, then the `DEEPSEEK_MODEL` / `DEEPSEEK_MAX_TURNS` environment variables, then the defaults above. Other keys come from the config file or the defaults.
 
@@ -88,14 +92,14 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 
 ## What happens in a run
 
-1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
+1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. If `deepseekPricing` isn't set, it asks which currency to use (or whether to skip this run), looks up DeepSeek's prices, asks you for any it couldn't find, and saves them only after you confirm. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
 2. **Plan.** Claude looks up what the code can answer and shows it to you to confirm. It asks you about every choice the goal leaves open (behaviour, names, interfaces, edge cases, tests, scope) and doesn't fill gaps on its own. Then it splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/` with a `plan.md` that records your answers. The rules are in `skills/claude-planning/SKILL.md`.
 3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md`, has you review it too in `step` mode, and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
 4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts) and the full diff in the conversation, leaving out the plugin's own `.deepseek-coder/` files. With `gitMode: none` it lists the changed files only.
 5. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
-6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
+6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it, a table of DeepSeek's tokens for each coder run (with an estimated cost when `deepseekPricing` is set), and a best-effort table of Claude's own tokens from the session transcript. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
 
-Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
+Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`usage.jsonl`) and the run's start time and transcript path (`run.json`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
 
 ## Safety
 
@@ -117,5 +121,6 @@ Every spec and the coder's raw JSON output (`step-NN.json`) are kept in the run 
 | Coder says a command was denied | Add it to `allowedCommands`. |
 | "running scripts is disabled on this system" (Windows) | The command uses `-ExecutionPolicy Bypass`; make sure it wasn't removed. |
 | Non-English text garbled | Save spec files as UTF-8 (the wrapper reads and writes UTF-8). |
-| Cost in the JSON log looks wrong | `total_cost_usd` is computed at Claude prices. Check the DeepSeek console for real usage. |
+| Cost in the JSON log looks wrong | `total_cost_usd` and `modelUsage` in the log use Claude prices and add up across fix rounds. Use the coder's `USAGE` line or, from the project root, `node "<plugin folder>/scripts/usage.js" <run folder>` instead. |
+| Claude usage table says "no run.json" or "no transcript path recorded" | The run was started by a plugin version before 0.2.1, or Claude never wrote a file into the run folder. The DeepSeek table still works. |
 | Images or PDFs not understood by the coder | DeepSeek's Anthropic-compatible endpoint doesn't support document content. Describe it in the spec. |
