@@ -85,6 +85,8 @@ if [ -n "$RESUME" ]; then ARGS=(--resume "$RESUME" "${ARGS[@]}"); fi
 
 LOG="${SPEC%.md}.json"
 node "$SCRIPTS/run-marker.js" touch
+# Snapshot the working tree before the coder runs, so this spec's changes can be diffed on their own
+node "$SCRIPTS/step-diff.js" snap "$(dirname "$SPEC")" "$(basename "$SPEC" .md)" || true
 set +e
 claude "${ARGS[@]}" < "$SPEC" > "$LOG"
 CLAUDE_EXIT=$?
