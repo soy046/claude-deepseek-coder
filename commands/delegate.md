@@ -10,6 +10,9 @@ Goal: $ARGUMENTS
 You are the PLANNER. DeepSeek is the CODER. You explore, plan, write specs, review and test.
 DeepSeek writes the code. During a run you never edit source files yourself; a hook blocks it.
 
+Before you start, read `${CLAUDE_PLUGIN_ROOT}/skills/claude-planning/SKILL.md` and follow it for the whole run.
+It decides how you ask questions, write the plan and specs, and get each spec reviewed.
+
 Run every command below from the project root. Plugin scripts:
 
 | Purpose | Command |
@@ -47,12 +50,14 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 ## 2. Plan
 
-1. Explore just enough of the codebase to plan the goal.
+1. Explore the codebase and ask the user every open question, as the planning skill's sections 1 and 2 say.
+   Do not go on until every point is a confirmed fact or a decision the user made.
 2. Split the goal into small, ordered steps. Each step should be finishable by DeepSeek within its `maxTurns`.
-3. Create the run folder `.deepseek-coder/plans/<YYYY-MM-DD-HHMM>-<slug>/` (local time; slug is 2-5 kebab-case words from the goal).
+3. Create the run folder `.deepseek-coder/plans/<YYYY-MM-DD-HHMM>-<slug>/` (local time; slug is 2-5 kebab-case words from the goal),
+   then write `plan.md` in it (planning skill, section 3).
 4. Follow `approvalMode`:
+   - `step` (the default): show the step list for information, then have the user review every spec before it is delegated (section 3b).
    - `plan`: show the numbered step list (title and one-line scope each) and wait for the user's approval. Revise if asked.
-   - `step`: show the step list for information, then ask approval before every delegation (section 3b).
    - `auto`: show the step list and continue without waiting.
 5. Start the run: marker `start "<run folder>"`.
 
@@ -71,7 +76,10 @@ a. **Spec.** Write `<run folder>/step-NN.md`:
 ## Out of scope
 ```
 
-b. **Approval** (`step` mode only): show the spec and wait for approval.
+   Then run the implement-ready check (planning skill, section 4).
+
+b. **Approval** (`step` mode only): review the spec with the user as the planning skill's section 5 says.
+   Show the full spec in your message and delegate only after the user explicitly approves it.
 
 c. **Delegate.** Run the coder command for this OS with the spec path, **in the background** (`run_in_background`).
    Wait for the completion notification; do not poll it and do not change files meanwhile.
@@ -86,8 +94,10 @@ e. **Review.** Never trust DeepSeek's report alone.
    - Check every acceptance criterion and run the spec's verify commands yourself.
 
 f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): write `<run folder>/step-NN-fixK.md`
-   listing each problem concretely (file, line or function, expected vs actual) and the change needed. Run the coder
-   with that spec and the resume option set to the `SESSION_ID` from the latest output. Review again (e).
+   listing each problem concretely (file, line or function, expected vs actual) and the change needed. If a problem
+   needs a decision the plan does not cover, ask the user first (planning skill, section 6). Run the implement-ready
+   check, and in `step` mode review the fix spec with the user as in (b). Then run the coder with that spec and the
+   resume option set to the `SESSION_ID` from the latest output. Review again (e).
    After `maxFixRounds` failed fix rounds: **stop and ask the user.** Show the spec, the latest report and the failing
    checks. Leave the run marker in place. If the user tells you to edit the code yourself, end the run first (marker `stop`).
 

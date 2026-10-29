@@ -1,5 +1,7 @@
 # deepseek-coder
 
+**New here?** Start with the [user guide](docs/USER_GUIDE.md): it walks you through installing, setting your API key, and your first run.
+
 A Claude Code plugin that splits work between two models:
 
 - **Claude (your normal session) is the planner.** It explores the code, breaks the goal into steps, writes a spec for each step, reviews the result and runs the tests.
@@ -60,7 +62,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
   "model": "deepseek-flash[1m]",
   "maxTurns": 20,
   "extraInstructions": "",
-  "approvalMode": "plan",
+  "approvalMode": "step",
   "gitMode": "commit",
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30
@@ -73,7 +75,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
 | `model` | DeepSeek model name | `deepseek-flash[1m]` | Model the coder uses. |
 | `maxTurns` | positive integer | `20` | Turn limit per coder run. |
 | `extraInstructions` | string | `""` | Project rules appended to the coder's system prompt. |
-| `approvalMode` | `plan` / `step` / `auto` | `plan` | `plan`: you approve the step list once. `step`: you approve every spec. `auto`: no stops. |
+| `approvalMode` | `step` / `plan` / `auto` | `step` | `step`: you review and approve every spec, fix specs included, before DeepSeek gets it. `plan`: you approve the step list once. `auto`: no stops. |
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
@@ -87,8 +89,8 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 ## What happens in a run
 
 1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
-2. **Plan.** Claude splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/`.
-3. **Each step.** Claude writes `step-NN.md`, runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md` and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
+2. **Plan.** Claude looks up what the code can answer and shows it to you to confirm. It asks you about every choice the goal leaves open (behaviour, names, interfaces, edge cases, tests, scope) and doesn't fill gaps on its own. Then it splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/` with a `plan.md` that records your answers. The rules are in `skills/claude-planning/SKILL.md`.
+3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md`, has you review it too in `step` mode, and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
 4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts) and the full diff in the conversation, leaving out the plugin's own `.deepseek-coder/` files. With `gitMode: none` it lists the changed files only.
 5. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
 6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
