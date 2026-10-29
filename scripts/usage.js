@@ -166,4 +166,4 @@ if (require.main === module) {
   process.stdout.write(report(runDir));
 }
 
-module.exports = { fromResult, format, cost, formatCost, readUsageLog };
+module.exports = { fromResult, format, cost, formatCost, readUsageLog, readPricing };
