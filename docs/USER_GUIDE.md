@@ -83,11 +83,13 @@ add a subtract(a, b) function to src/math.js with a test
 
 **2. Claude proposes a config.** The first time you use the plugin in a project, there is no `.deepseek-coder/config.json`. Claude inspects the project to find its test, lint and build commands, then shows you a complete config — every key, with `allowedCommands` filled in from what it found. It writes the file only after you approve it, with any changes you ask for.
 
-**3. Claude plans and waits for your approval.** Claude explores just enough of the code, splits the goal into small ordered steps, and creates a run folder at `.deepseek-coder/plans/<date-time>-<slug>/`. With the default `approvalMode` of `plan`, it shows the numbered step list, with a title and one-line scope for each, and waits. If you want changes, say so and Claude revises the plan. In this example the plan had one step.
+**3. Claude asks its questions and plans.** Claude explores the code. It shows you what it found there, such as where `src/math.js` exports its functions and which command runs the tests, and asks you to confirm. Then it asks about every choice the goal leaves open instead of guessing. In this example, that could be whether `subtract` should check its arguments' types and which test cases to add. If an answer is vague, Claude offers concrete options and asks again. When nothing is open, it splits the goal into small ordered steps, creates a run folder at `.deepseek-coder/plans/<date-time>-<slug>/`, and records your answers in `plan.md` there. It shows you the numbered step list. In this example the plan had one step.
 
-**4. DeepSeek works in the background.** Claude writes `step-01.md` in the run folder and starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. In this run DeepSeek took 7 turns and needed no fix rounds.
+**4. You review the spec.** Claude writes `step-01.md` in the run folder and, with the default `approvalMode` of `step`, shows you the whole spec in the conversation. If you ask for changes, it updates the spec and shows it again. Nothing goes to DeepSeek until you approve that version.
 
-**5. Claude shows what changed.** DeepSeek's own report is never trusted on its own: Claude reads the diff and runs the tests itself. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
+**5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. In this run DeepSeek took 7 turns and needed no fix rounds.
+
+**6. Claude shows what changed.** DeepSeek's own report is never trusted on its own: Claude reads the diff and runs the tests itself. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
 
 ```
 Step 01 changed 2 files:
@@ -107,7 +109,7 @@ Below the list, Claude shows the full diff in a `diff` code block, without trimm
 
 The plugin's own files in `.deepseek-coder/` are left out of both the list and the diff.
 
-**6. The step is committed.** With the default `gitMode` of `commit`, Claude commits. The message is a Conventional Commit and ends with one trailer for Claude and one for the DeepSeek model that wrote the code:
+**7. The step is committed.** With the default `gitMode` of `commit`, Claude commits. The message is a Conventional Commit and ends with one trailer for Claude and one for the DeepSeek model that wrote the code:
 
 ```
 feat(math): add subtract
@@ -116,7 +118,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 Co-Authored-By: DeepSeek deepseek-flash[1m] <noreply@deepseek.com>
 ```
 
-**7. Claude summarizes the run.** You get each step, what DeepSeek implemented, which fix rounds were needed and why, the final test results, and the run folder path. The summary also includes a combined list of every file changed in the run, with the steps that touched it:
+**8. Claude summarizes the run.** You get each step, what DeepSeek implemented, which fix rounds were needed and why, the final test results, and the run folder path. The summary also includes a combined list of every file changed in the run, with the steps that touched it:
 
 ```
 Files changed in this run:
@@ -124,9 +126,9 @@ Files changed in this run:
   M test/math.test.js   +5 -1   (step 01)
 ```
 
-**8. Claude asks about pushing.** In `commit` mode, if the repository has a remote, Claude asks whether to push. It never pushes on its own.
+**9. Claude asks about pushing.** In `commit` mode, if the repository has a remote, Claude asks whether to push. It never pushes on its own.
 
-That's a whole run. Most of the time, your only job is to approve the plan and then read the changes as each step comes in.
+That's a whole run. Most of the time, your job is to answer Claude's questions, approve each spec, and read the changes as each step comes in.
 
 ## Choosing settings
 
@@ -138,7 +140,7 @@ Settings live in `.deepseek-coder/config.json` in your project. Here is an examp
   "model": "deepseek-flash[1m]",
   "maxTurns": 20,
   "extraInstructions": "",
-  "approvalMode": "plan",
+  "approvalMode": "step",
   "gitMode": "commit",
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30
@@ -153,14 +155,14 @@ These are all the keys:
 | `model` | DeepSeek model name | `deepseek-flash[1m]` | Model the coder uses. |
 | `maxTurns` | positive integer | `20` | Turn limit per coder run. |
 | `extraInstructions` | string | `""` | Project rules appended to the coder's system prompt. |
-| `approvalMode` | `plan` / `step` / `auto` | `plan` | `plan`: you approve the step list once. `step`: you approve every spec. `auto`: no stops. |
+| `approvalMode` | `step` / `plan` / `auto` | `step` | `step`: you review and approve every spec, fix specs included, before DeepSeek gets it. `plan`: you approve the step list once. `auto`: no stops. |
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
 
 When Claude proposes the config, it fills in `allowedCommands` from the project's test, lint and build commands; you can add or remove entries before approving. If the key is left out, the default is `[]`, and DeepSeek can then run no shell commands. Use `extraInstructions` for project rules the coder should always follow, such as a style guide or libraries to avoid; those rules are appended to its system prompt.
 
-**`approvalMode`.** Use `plan` (the default) when you want to check the plan once and then let the run go. Use `step` when you want to read and approve every spec before DeepSeek sees it. Use `auto` only when you trust the goal and the project knows how to test itself, because there are no stops at all.
+**`approvalMode`.** Use `step` (the default) when you want to read and approve every spec before DeepSeek sees it, including the fix specs Claude writes when a step needs corrections. Use `plan` when you want to check the step list once and then let the run go. Use `auto` only when you trust the goal and the project knows how to test itself, because there are no stops at all.
 
 **`gitMode`.** Use `commit` (the default) to get one Conventional Commit per accepted step. Use `stage` if you want to review and commit the changes yourself; Claude runs `git add -A` and stops there. Use `none` for a folder that isn't a git repository; DeepSeek's changes are not committed or staged.
 

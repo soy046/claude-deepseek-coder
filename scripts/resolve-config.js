@@ -17,7 +17,7 @@ const DEFAULTS = {
   model: 'deepseek-flash[1m]',
   maxTurns: 20,
   extraInstructions: '',
-  approvalMode: 'plan',
+  approvalMode: 'step',
   gitMode: 'commit',
   maxFixRounds: 3,
   markerExpiryMinutes: 30,
