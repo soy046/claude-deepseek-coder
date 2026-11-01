@@ -29,6 +29,7 @@ Keep the quotes: Node expands the pattern itself, so the command works the same 
 | `scripts/deepseek-coder.ps1`, `scripts/deepseek-coder.sh` | Run one spec on DeepSeek through a headless Claude Code process (Windows and macOS/Linux). |
 | `scripts/print-result.js` | Turns a coder log into the summary the planner reads, including the `USAGE` line, and appends the run to `usage.jsonl`. |
 | `scripts/usage.js` | Token usage: the DeepSeek table for a run folder (`usage.js <run folder>`) and the Claude table from the session transcript (`usage.js claude <run folder>`). |
+| `scripts/step-diff.js` | Working-tree snapshots through a private git index, and change lists between them: `snap`, `diff`, `stat` (one step) and `run` (the whole run, with step numbers). |
 | `hooks/hooks.json`, `hooks/edit-guard.js` | The edit guard: during a run, blocks the planner from editing source files, and records the planner's transcript path in `run.json`. |
 
 How they call each other:
@@ -36,6 +37,7 @@ How they call each other:
 - The runner scripts call `resolve-config.js` for the settings, `run-marker.js touch` before and after the coder, and `print-result.js` on the coder's log.
 - `print-result.js` uses `usage.js`, which gets `deepseekPricing` from `resolve-config.js --get`.
 - `run-marker.js` and `edit-guard.js` call `resolve-config.js --get markerExpiryMinutes`.
+- The runner scripts call `step-diff.js snap` right before the coder starts, naming the snapshot after the spec; `delegate.md` has the planner call `diff`, `stat` and `run`.
 
 ## Run folder files
 
@@ -49,3 +51,4 @@ Each run gets a folder `.deepseek-coder/plans/<date-time>-<slug>/`. The run mark
 | `step-NN.json`, `step-NN-fixK.json` | the runner script | The coder's raw JSON output for that spec. |
 | `usage.jsonl` | `print-result.js` | One line per coder run: `at, spec, sessionId, turns, status, error, input, cacheRead, cacheWrite, output`. |
 | `run.json` | `run-marker.js start`, then `edit-guard.js` | `startedAt`, and the planner's `transcriptPath` once the planner writes into the run folder. |
+| `.snap-<name>`, e.g. `.snap-step-01`, `.snap-step-01-fix1` | the runner script, via `step-diff.js snap` | The git tree hash of the working tree just before that spec's coder run. The first snapshot for a name is kept if a spec runs again. |
