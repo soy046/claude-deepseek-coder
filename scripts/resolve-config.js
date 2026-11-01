@@ -22,11 +22,9 @@ const DEFAULTS = {
   maxFixRounds: 3,
   markerExpiryMinutes: 30,
   deepseekPricing: null,
-  showDiff: 'stat',
 };
 const APPROVAL_MODES = ['plan', 'step', 'auto'];
 const GIT_MODES = ['commit', 'stage', 'none'];
-const SHOW_DIFF = ['stat', 'full'];
 const FILE_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep'];
 
 function fail(msg) {
@@ -94,7 +92,6 @@ function resolve(projectDir) {
     maxFixRounds: positiveInt(file.maxFixRounds ?? DEFAULTS.maxFixRounds, 'maxFixRounds'),
     markerExpiryMinutes: positiveInt(file.markerExpiryMinutes ?? DEFAULTS.markerExpiryMinutes, 'markerExpiryMinutes'),
     deepseekPricing: pricing(file.deepseekPricing ?? DEFAULTS.deepseekPricing),
-    showDiff: file.showDiff ?? DEFAULTS.showDiff,
   };
 
   if (!Array.isArray(cfg.allowedCommands) || cfg.allowedCommands.some((c) => typeof c !== 'string' || !c.trim())) {
@@ -104,7 +101,6 @@ function resolve(projectDir) {
   if (typeof cfg.extraInstructions !== 'string') fail('extraInstructions must be a string');
   if (!APPROVAL_MODES.includes(cfg.approvalMode)) fail(`approvalMode must be one of ${APPROVAL_MODES.join(' | ')}`);
   if (!GIT_MODES.includes(cfg.gitMode)) fail(`gitMode must be one of ${GIT_MODES.join(' | ')}`);
-  if (!SHOW_DIFF.includes(cfg.showDiff)) fail(`showDiff must be one of ${SHOW_DIFF.join(' | ')}`);
 
   // Prefix match: "npm test" allows "npm test" and "npm test -- --foo"
   cfg.allowedTools = FILE_TOOLS.concat(cfg.allowedCommands.map((c) => `Bash(${c.trim()}:*)`));

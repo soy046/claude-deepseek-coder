@@ -97,7 +97,7 @@ Step 01 changed 2 files:
   M test/math.test.js   +5 -1
 ```
 
-With the default `showDiff` of `stat`, Claude adds "Full diff: ask me to show it." below the list. Ask, and it shows the full diff in a `diff` code block, without trimming it; with `showDiff` set to `full` it shows it every time. The important part of this one was:
+Below the list, Claude shows the full diff in a `diff` code block, without trimming it. The important part of this one was:
 
 ```diff
 +function subtract(a, b) {
@@ -107,7 +107,7 @@ With the default `showDiff` of `stat`, Claude adds "Full diff: ask me to show it
 +module.exports = { add, multiply, subtract };
 ```
 
-The plugin's own files in `.deepseek-coder/` are left out of both the list and the diff. Claude takes both from a snapshot of your working tree made just before DeepSeek started, so the list shows exactly what this step changed.
+The plugin's own files in `.deepseek-coder/` are left out of both the list and the diff.
 
 **7. The step is committed.** With the default `gitMode` of `commit`, Claude commits. The message is a Conventional Commit and ends with one trailer for Claude and one for the DeepSeek model that wrote the code:
 
@@ -146,8 +146,7 @@ Settings live in `.deepseek-coder/config.json` in your project. Here is an examp
   "gitMode": "commit",
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30,
-  "deepseekPricing": null,
-  "showDiff": "stat"
+  "deepseekPricing": null
 }
 ```
 
@@ -164,7 +163,6 @@ These are all the keys:
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
 | `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
-| `showDiff` | `stat` / `full` | `stat` | `stat`: after each step Claude shows the changed files with `+/-` counts, and the full diff only when you ask. `full`: it also shows the full diff every time. |
 
 When Claude proposes the config, it fills in `allowedCommands` from the project's test, lint and build commands; you can add or remove entries before approving. If the key is left out, the default is `[]`, and DeepSeek can then run no shell commands. Use `extraInstructions` for project rules the coder should always follow, such as a style guide or libraries to avoid; those rules are appended to its system prompt.
 
@@ -173,8 +171,6 @@ When Claude proposes the config, it fills in `allowedCommands` from the project'
 **`gitMode`.** Use `commit` (the default) to get one Conventional Commit per accepted step. Use `stage` if you want to review and commit the changes yourself; Claude runs `git add -A` and stops there. Use `none` for a folder that isn't a git repository; DeepSeek's changes are not committed or staged.
 
 **`deepseekPricing`.** Leave it `null` and Claude asks for it at the start of each run; you can skip it. Prices are per 1M tokens: `input` is input on a cache miss, `cacheHit` is input on a cache hit, and `output` is output. `currency` is a 3-letter code such as `USD` or `CNY`. A set value looks like `{"input": 0.27, "cacheHit": 0.07, "output": 1.1, "currency": "USD"}` (example numbers, not current prices). Claude only writes prices you have confirmed.
-
-**`showDiff`.** Use `stat` (the default) to see only the list of changed files after each step; Claude still reads the full diff itself to review it, and shows it to you when you ask. Use `full` if you want every step's full diff in the conversation, which makes long runs much longer.
 
 **`allowedCommands`.** These are the only shell commands DeepSeek may run. Entries are prefix matches, so `"npm test"` also allows `npm test -- --watch=false`, but not `npm run test`. Use commands that match your project:
 
@@ -219,8 +215,6 @@ numbers. Verify with npm test.
 After DeepSeek finishes a step, Claude reviews the result. If something fails, Claude writes a fix spec, `step-NN-fixK.md`, that lists each problem concretely — file, line or function, expected versus actual — and resumes the same DeepSeek session with it. That attempt is a **fix round**.
 
 `maxFixRounds` (default `3`) limits how many correction attempts a step gets. After the last failed fix round, Claude stops, shows you what failed — the spec, the latest DeepSeek report and the failing checks — and asks you what to do. The run marker stays in place while you decide. If you tell Claude to edit the code itself, it ends the run first so the edit guard lets it through.
-
-After each fix round Claude reads only what the fix changed, compared with a snapshot taken just before the fix started, and then re-checks every acceptance criterion and re-runs every verify command.
 
 ## Safety in plain words
 
