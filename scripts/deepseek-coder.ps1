@@ -78,8 +78,6 @@ if ($ResumeSession) { $cliArgs = @('--resume', $ResumeSession) + $cliArgs }
 
 $logPath = [IO.Path]::ChangeExtension($SpecFile, '.json')
 & node (Join-Path $scripts 'run-marker.js') touch
-# Snapshot the working tree before the coder runs, so this spec's changes can be diffed on their own
-& node (Join-Path $scripts 'step-diff.js') snap (Split-Path -Parent $SpecFile) ([IO.Path]::GetFileNameWithoutExtension($SpecFile))
 try {
     $raw = Get-Content -Raw -Encoding UTF8 -LiteralPath $SpecFile | & claude @cliArgs
     $claudeExit = $LASTEXITCODE

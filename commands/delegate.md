@@ -22,11 +22,9 @@ Run every command below from the project root. Plugin scripts:
 | Coder, Windows | `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.ps1" -SpecFile "<spec>" [-ResumeSession <id>]` |
 | Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>]` |
 | Usage tables | `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" "<run folder>"` (DeepSeek) and `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" claude "<run folder>"` (Claude) |
-| Step diffs | `node "${CLAUDE_PLUGIN_ROOT}/scripts/step-diff.js" <diff "<run folder>" <name> \| stat "<run folder>" <NN> \| run "<run folder>">` |
 
 The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR`, `USAGE`,
 `EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines.
-Right before each coder run, the coder command snapshots the working tree, named after the spec (`step-01`, `step-01-fix1`).
 Exit code 0 means the run finished, 1 means it failed (including hitting the turn limit), 3 means the recursion guard refused it.
 
 ## 1. Preflight
@@ -37,12 +35,12 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
    - Inspect the project (package.json scripts, pyproject.toml, Makefile, etc.) to find its test, lint and build commands.
    - Propose a complete config to the user showing every key: `allowedCommands` (what you found), `model`, `maxTurns`,
      `extraInstructions`, `approvalMode` (`plan` | `step` | `auto`), `gitMode` (`commit` | `stage` | `none`),
-     `maxFixRounds`, `markerExpiryMinutes`, `deepseekPricing` (propose `null`; step 4 sets it), `showDiff`
-     (`stat` | `full`). Show the plugin defaults for the others (run the resolve-config command to see them). Explain
-     that `allowedCommands` entries are prefix matches and are the only shell commands DeepSeek may run.
+     `maxFixRounds`, `markerExpiryMinutes`, `deepseekPricing` (propose `null`; step 4 sets it). Show the plugin
+     defaults for the others (run the resolve-config command to see them). Explain that `allowedCommands` entries are
+     prefix matches and are the only shell commands DeepSeek may run.
    - Write the file only after the user approves it, with any changes they ask for.
 3. **Resolve.** Run the resolve-config command. If it fails, show the error and stop.
-   Use its `approvalMode`, `gitMode`, `maxFixRounds`, `showDiff` for the rest of the run.
+   Use its `approvalMode`, `gitMode`, `maxFixRounds` for the rest of the run.
 4. **Pricing.** If the resolved `deepseekPricing` is `null`:
    - Ask the user which currency to record DeepSeek prices in (3 uppercase letters, e.g. `USD` or `CNY`), or whether
      to skip pricing for this run. Skip: leave `deepseekPricing` as it is and continue. The usage tables then show
@@ -106,18 +104,16 @@ d. **Read the result.** Exit 3: stop the run and tell the user the recursion gua
    Exit 1 or `ERROR: true`: count it as a failed attempt and go to (f).
 
 e. **Review.** Never trust DeepSeek's report alone.
-   - In a git repo (any `gitMode`): run step-diff `diff "<run folder>" step-NN` and read it. It shows everything this
-     step changed since the snapshot taken before its first coder run.
-   - Not a git repo: read every file the coder reports changing.
+   - `gitMode` `commit` or `stage`: run `git add -N -- . ":(exclude).deepseek-coder"` then `git diff` (earlier accepted steps are committed or staged,
+     so the diff is this step only).
+   - `gitMode` `none`: read every file the coder reports changing.
    - Check every acceptance criterion and run the spec's verify commands yourself.
 
 f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): write `<run folder>/step-NN-fixK.md`
    listing each problem concretely (file, line or function, expected vs actual) and the change needed. If a problem
    needs a decision the plan does not cover, ask the user first (planning skill, section 6). Run the implement-ready
    check, and in `step` mode review the fix spec with the user as in (b). Then run the coder with that spec and the
-   resume option set to the `SESSION_ID` from the latest output. Review again: in a git repo, read only
-   step-diff `diff "<run folder>" step-NN-fixK` (what this fix changed); without a repo, read the files the fix reports
-   changing. Either way, check every acceptance criterion and run every verify command again.
+   resume option set to the `SESSION_ID` from the latest output. Review again (e).
    After `maxFixRounds` failed fix rounds: **stop and ask the user.** Show the spec, the latest report and the failing
    checks. Leave the run marker in place. If the user tells you to edit the code yourself, end the run first (marker `stop`).
 
@@ -125,18 +121,17 @@ g. **Show the changes.** Once the step passes review, write a message to the use
    then continue to (h). The user does not see tool output, so running the commands below is not enough: copy their
    results into your message text. Do this for every step, in every `approvalMode`, before accepting it.
    Leave out the plugin's own files in `.deepseek-coder/`.
-   - In a git repo: run step-diff `stat "<run folder>" NN` and copy its output into your message, for example:
+   - `gitMode` `commit` or `stage`: run `git add -N -- . ":(exclude).deepseek-coder"`, then
+     `git diff --name-status -- . ":(exclude).deepseek-coder"` and `git diff --numstat -- . ":(exclude).deepseek-coder"`,
+     and show one line per file with its status letter and `+added -removed` counts:
 
      ```
      Step NN changed 2 files:
-       M src/math.js   +4 -1
-       A src/util.js   +12 -0
+       M src/math.js        +4 -1
+       A src/util.js        +12 -0
      ```
-     - `showDiff` `stat`: below it, add the line `Full diff: ask me to show it.` If the user asks, run step-diff
-       `diff "<run folder>" step-NN` and show it in a ```diff code block, without trimming it.
-     - `showDiff` `full`: below it, run step-diff `diff "<run folder>" step-NN` and show it in a ```diff code block,
-       without trimming it.
-   - Not a git repo: show the list of files DeepSeek reports changing, one per line, with no code.
+     Then run `git diff -- . ":(exclude).deepseek-coder"` and show the full diff in a ```diff code block, without trimming it.
+   - `gitMode` `none`: show the list of files DeepSeek reports changing, one per line, with no code.
 
 h. **Accept.**
    - `commit`: `git add -A -- . ":(exclude).deepseek-coder/plans/.run-active"`, then commit with a Conventional Commits message (`<type>(<scope>): <summary>`, optional body),
@@ -154,15 +149,15 @@ h. **Accept.**
 1. **Usage.** Run both usage-table commands with the run folder and keep their output.
 2. End the run: marker `stop`.
 3. Summarize: each step, what DeepSeek implemented, which fix rounds were needed and why, final test results,
-   and the run folder path. Include the combined list of files changed in the run: in a git repo, run step-diff
-   `run "<run folder>"` and copy its output unchanged, for example:
+   and the run folder path. Include a combined list of every file changed in the run (outside `.deepseek-coder/`),
+   one line per file with its status letter, `+added -removed` totals and the step numbers that touched it
+   (with `gitMode` `none`: file names and step numbers only):
 
    ```
    Files changed in this run:
-     M src/math.js   +9 -2   (steps 01, 02)
-     A src/util.js   +12 -0  (step 02)
+     M src/math.js        +9 -2   (steps 01, 02)
+     A src/util.js        +12 -0  (step 02)
    ```
-   Not a git repo: list each file the coder reported changing, with the step numbers that touched it.
    Then copy the output of both usage-table commands from item 1 into the summary unchanged, each in its own
    code block: first the DeepSeek table, then the Claude table.
 4. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.

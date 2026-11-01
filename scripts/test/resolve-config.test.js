@@ -107,27 +107,3 @@ test('existing keys keep their --get output', (t) => {
   assert.equal(mode.status, 0);
   assert.equal(mode.stdout, 'step');
 });
-
-test('missing showDiff resolves to stat', (t) => {
-  const dir = makeProject({});
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const r = run(dir, ['--get', 'showDiff']);
-  assert.equal(r.status, 0);
-  assert.equal(r.stdout, 'stat');
-});
-
-test('explicit showDiff full resolves to full', (t) => {
-  const dir = makeProject({ showDiff: 'full' });
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const r = run(dir, ['--get', 'showDiff']);
-  assert.equal(r.status, 0);
-  assert.equal(r.stdout, 'full');
-});
-
-test('invalid showDiff is rejected', (t) => {
-  const dir = makeProject({ showDiff: 'diff' });
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const r = run(dir, ['--get', 'showDiff']);
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /showDiff must be one of stat \| full/);
-});
