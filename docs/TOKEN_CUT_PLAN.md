@@ -18,7 +18,7 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | PR | What | Version | Status |
 |---|---|---|---|
 | 1 (+1b) | Measure usage on both sides | 0.2.1 | Merged (#2) |
-| 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-land open on `feat/reland-step-diff` |
+| 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-land open as #5 |
 | 3 | Short test output, smaller fix rounds | 0.4.0 | Not started |
 | 4 | Size check before delegating small tasks | 0.5.0 | Not started |
 | 5 | Model names and the planner model | not set | Not started |
