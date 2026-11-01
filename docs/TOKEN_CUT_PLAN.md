@@ -117,6 +117,29 @@ The planner asked a different set of questions in each run (below), so part of t
 - formatSummary checks for an empty array itself first, and mode/variance leave the input unmutated: yes to both.
 - `variance([], true)` throws the empty-array error (checked first).
 
+### Control: Claude alone, no plugin (2026-11-01)
+
+The same goal done by Claude without the plugin, to see whether delegating saves Claude tokens at all.
+
+**Setup:** fresh clones `D:\projects\bench-claude-run1` and `-run2` at `801ee27`, with `.deepseek-coder/` removed and the plugin turned off for those folders by a committed `.claude/settings.json` (`"deepseek-coder@soy046": false`). Same planner model (Opus 5.5 medium), same front end (desktop app, CLI 2.1.309). Measured with `usage.js claude` on a folder outside the repo holding a hand-written `run.json`; copies of each transcript are in `D:\projects\bench-results\`.
+
+**Prompt:** the goal text without `/deepseek-coder:delegate`, plus this last paragraph so Claude follows the same plan-then-implement workflow:
+
+```
+Work like this: first explore the code and ask me about anything the goal leaves open, then show a numbered plan of the three steps and continue without waiting for approval. Then for each step: implement it yourself, run npm test, and commit the step separately with a Conventional Commits message.
+```
+
+| Run | Claude msgs | Claude output | Claude cache write | Claude cache read | Questions asked | Commits | Tests | Wall time |
+|---|---|---|---|---|---|---|---|---|
+| bench-claude-run1 | 9 | 4,908 | 28,356 | 612,909 | 0 | 3 | 29/29 pass | 75 s |
+| bench-claude-run2 | 10 | 5,752 | 29,172 | 686,389 | 2 | 3 | 30/30 pass | 91 s |
+| **Claude-only average** | 10 | 5,330 | 28,764 | 649,649 | 1 | 3 | pass | 83 s |
+| Delegated average (0.2.1) | 21 | 15,778 | 55,307 | 1,769,674 | 4–5 | 3 | pass | 6 min |
+
+Both runs passed the same spot check as the delegated runs, with identical output. Run 2's questions (mode when every value occurs once; how to print mode values) got the recommended answers.
+
+**Finding:** on this task (about 130 added lines in 4 files), delegating on 0.2.1 cost the planner about 3× the output tokens (15.8k vs 5.3k), 1.9× the cache writes and 2.7× the cache reads of doing the work in Claude, plus about 0.15 CNY of DeepSeek and 4× the wall time. The delegated runs did write more tests (41 and 36 vs 29 and 30). So for a task this size, delegation has to cut Claude-side tokens by about two thirds just to break even. The after-PR 4 runs show how far PRs 2–4 close that gap, and PR 4's size threshold (about 30 lines in 1–2 files) may need to be higher.
+
 ## PR 3: short test output and smaller fix rounds (0.4.0)
 
 **New `scripts/run-check.js --log <file> "<cmd>"`**
@@ -166,3 +189,4 @@ The planner asked a different set of questions in each run (below), so part of t
 
 1. **PR 3 base branch:** start after PR 2 is re-landed on `main`, or branch from the re-land branch before it merges?
 2. **PR 5 version:** bump only if defaults or code change, or always?
+3. **PR 4 size threshold:** the Claude-only control did a ~130-line, 4-file task with a third of the delegated Claude output. Raise the "small" guideline above ~30 lines in 1–2 files, and to what?
