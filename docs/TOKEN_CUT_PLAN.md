@@ -19,7 +19,7 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 |---|---|---|---|
 | 1 (+1b) | Measure usage on both sides | 0.2.1 | Merged (#2) |
 | 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-landed (#5) |
-| 3 | Short test output, diff-only review, smaller fix rounds | 0.4.0 | Planned (2026-11-03), branch `feat/run-check` |
+| 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Built 2026-11-03 on `feat/run-check`, PR open |
 | 4 | Size check before delegating small tasks | 0.5.0 | Not started |
 | 5 | Model names and the planner model | not set | Not started |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
@@ -295,6 +295,7 @@ The third 2026-10-28 review idea. Not decided; build after PRs 3 and 4 are measu
 - Session transcripts write each assistant message several times. Count each `message.id` once.
 - The run marker is deleted before the summary, so run data that the summary needs lives in `run.json` in the run folder.
 - DeepSeek can only run `allowedCommands` (`node --test` here). Claude tests anything that needs a shell, such as the runner scripts, itself.
+- An exclude pathspec that names a gitignored path (`git add -A -- . ":(exclude).deepseek-coder"`) makes `git add` exit 1, even though it stages everything else. With `.deepseek-coder/` gitignored, 0.3.0 snapshots failed silently and the accept command stopped before the commit. Fixed in PR 3 (step 05): add everything, then drop the plugin path with `git rm -r -q -f --cached --ignore-unmatch`. Failed snapshots now print a warning on stderr, so a failure like this can't go unnoticed again.
 
 ## Open questions
 
