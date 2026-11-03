@@ -2,7 +2,7 @@
 
 This plan covers five pull requests that reduce the tokens the Claude planner spends during a delegation run, without making DeepSeek's results worse. It records the decisions made so far, what is finished, and what each remaining PR will change.
 
-Decisions were settled on 2026-10-29 (PR 3 on 2026-11-03). Status is as of 2026-11-03. Line numbers refer to `main` with PR 2 re-landed.
+Decisions were settled on 2026-10-29 (PRs 3 and 4 on 2026-11-03). Status is as of 2026-11-03. Line numbers refer to `main` with PR 2 re-landed.
 
 ## Why
 
@@ -19,8 +19,8 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 |---|---|---|---|
 | 1 (+1b) | Measure usage on both sides | 0.2.1 | Merged (#2) |
 | 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-landed (#5) |
-| 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Built 2026-11-03 on `feat/run-check`, PR open |
-| 4 | Size check before delegating small tasks | 0.5.0 | Not started |
+| 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Merged (#6) |
+| 4 | Size check before delegating small tasks | 0.5.0 | Built 2026-11-03 on `feat/size-check` |
 | 5 | Model names and the planner model | not set | Not started |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
 
@@ -35,7 +35,9 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 
 ## Order and how we prove the savings
 
-Order: PR 1 → PR 2 (built before the baseline ran) → baseline benchmark ×2 → re-land PR 2 → PRs 3, 4 → same benchmark ×2 → PR 5.
+Order: PR 1 → PR 2 (built before the baseline ran) → baseline benchmark ×2 → re-land PR 2 → PRs 3, 4 → one large-benchmark run on 0.5.0 → PRs 5, 6 → large benchmark, two arms × 2 runs.
+
+Once PR 4 is merged and the plugin is updated to 0.5.0, one large-benchmark run (`D:\projects\bench-large-0.5.0-run1`, set up and driven like the 0.2.1 large runs) gives an early look at PRs 2–4. It is a single run, so read it against the 34% run-to-run spread of the large 0.2.1 runs. The full after-PR 4 benchmark is skipped (decided 2026-11-03). One test runs after PR 6 is merged, on the large benchmark only: the small task now counts as small under PR 4, so it would mostly test the size check. It has two arms, 2 runs each: `reviewModel` unset, which measures PRs 2–4 against the large 0.2.1 runs, and `reviewModel` set, which measures PR 6 on top of that.
 
 - **Runs:** twice before and twice after, because model output varies between runs.
 - **Compare:** DeepSeek tokens (`usage.js <run folder>`), Claude tokens (`usage.js claude <run folder>`), the number of fix rounds, and whether the tests pass.
@@ -257,18 +259,22 @@ Step letters below match `commands/delegate.md` on `main`: 3d reads the result, 
 
 **Docs** (README, user guide, developer guide): two allow rules, `Bash(node *run-check.js*)` and `PowerShell(node *run-check.js*)` (PowerShell rules use the same shape as Bash rules, per the Claude Code permissions docs); the verify logs and their names; the `VERIFY` lines; diff-only review; the final check and final fixes; the fix-spec template. Bump `plugin.json` to 0.4.0.
 
-**Measure:** no separate 0.3.0 arm (decided 2026-11-03). Measure once after PRs 3 and 4, as the order section says: small benchmark ×2 plus a large-benchmark arm, since diff-only review should matter most there. Watch fix rounds, final fixes and the spot-check score: lighter review and trusted test reports must not let bugs through.
+**Measure:** no separate 0.3.0 arm (decided 2026-11-03). Measured after PR 6 on the large benchmark, as the order section says (the `reviewModel` unset arm), since diff-only review should matter most there. Watch fix rounds, final fixes and the spot-check score: lighter review and trusted test reports must not let bugs through.
 
 ## PR 4: size check before delegating (0.5.0)
 
-- **New step 1.0 in `delegate.md`,** before the run marker exists, so the edit guard doesn't block doing the task directly.
-- **New config key `smallTaskPolicy`:** `ask` (default), `direct` or `delegate`.
-  - `ask`: Claude says the task looks small and asks whether to do it directly.
-  - `direct`: Claude does small tasks itself without a run.
-  - `delegate`: always delegate, as today.
-- **What counts as small:** a guideline in `delegate.md`, not a config key. Roughly 30 changed lines or fewer, in 1–2 files, with no test-and-fix loop expected.
+Decided 2026-11-03. Built directly by Claude on branch `feat/size-check`, not as a delegation run: the change is small enough to fall under its own rule.
+
+- **New config key `smallTaskPolicy`:** `ask` (default), `direct` or `delegate`, validated by `resolve-config.js`.
+  - `ask`: Claude gives its estimate (about N changed lines in M files) and why it counts as small, then asks "Do it directly (Recommended)" or "Delegate to DeepSeek anyway".
+  - `direct`: Claude says in one line that it will do the task directly, and does.
+  - `delegate`: always delegate, as before.
+- **What counts as small:** a guideline in `delegate.md`, not a config key: about 300 changed lines or fewer, in 6 files or fewer, tests included. That is well above the first idea (~30 lines in 1–2 files), because the control showed delegation costing 3× the Claude output on a ~130-line, 4-file task. The "no test-and-fix loop expected" condition was dropped. There is no post-PR 4 benchmark; revisit the number once there is usage data from real runs.
+- **Where:** new Preflight item 2 in `delegate.md`, right after the existing-run check and before the config proposal, so a small task in a fresh project never triggers the config proposal or the pricing lookup, and the run marker doesn't exist yet. It applies to both `/deepseek-coder:delegate` and the skill.
+- **Unclear size:** treat the task as not small and go on. Plan item 2 checks again once the steps are planned, and before the run folder exists tells the user and applies the policy. If the user already picked "delegate" in Preflight, it doesn't ask again.
+- **Doing it directly** (new section "Small tasks done directly" in `delegate.md`): Claude follows the planning skill's sections 1–2 (confirm facts, ask every open question), shows a numbered step list and continues without waiting, edits the files itself, and runs the tests through `run-check.js` with a log in the system temp directory. No run folder, `plan.md`, specs, marker, usage tables, commit or staging; the summary says the changes are uncommitted.
 - **Skill description** (`skills/deepseek-delegation/SKILL.md:3`): not narrowed (decision 4).
-- **Docs:** `README.md:55`, the FAQ entry at `docs/USER_GUIDE.md:257`, and both config tables.
+- **Docs:** both config tables and example configs, README "What happens in a run" item 1, a user-guide `smallTaskPolicy` paragraph under "Choosing settings", a note in the first-run walkthrough, a new FAQ entry "Why did Claude do my task itself?", and a sentence in the skill FAQ entry.
 
 ## PR 5: model names and the planner model
 
@@ -278,14 +284,14 @@ Step letters below match `commands/delegate.md` on `main`: 3d reads the result, 
 
 ## PR 6: optional smaller review model (proposed 2026-11-03)
 
-The third 2026-10-28 review idea. Not decided; build after PRs 3 and 4 are measured, so its effect can be told apart from theirs.
+The third 2026-10-28 review idea. Not decided. Its effect is told apart from PRs 2–4 by the two arms of the post-PR 6 large benchmark.
 
 - **New config key `reviewModel`:** unset by default (Claude reviews, as today). When set (for example `haiku`), step 3d hands the review to a subagent on that model.
 - **What the reviewer gets:** the step's `git diff`, the step spec and the `run-check.js` line. Not the goal, the plan or earlier steps.
 - **What it returns:** `OK`, or a short list of concerns, each naming a file and line. Claude reads only that verdict, and on concerns writes a fix spec (PR 3's 3f rules apply).
 - **Guard:** Claude still runs `run-check.js` itself, so a passing review never stands in for passing tests.
 - **Risk:** a weaker reviewer misses bugs that show up later as fix rounds or spot-check failures. Make it a default only if fix rounds and spot-check scores hold.
-- **Measure:** its own arm on both benchmarks (small ×2, large ×2), against the PR 4 runs. Compare Claude output tokens, the reviewer model's tokens (priced separately), fix rounds and spot-check score.
+- **Measure:** the `reviewModel` set arm of the post-PR 6 large benchmark (×2), against the `reviewModel` unset arm. Compare Claude output tokens, the reviewer model's tokens (priced separately), fix rounds and spot-check score.
 - **Docs:** the config tables, and a note in the user guide on the trade-off.
 
 ## Lessons from PRs 1 and 2
@@ -300,5 +306,5 @@ The third 2026-10-28 review idea. Not decided; build after PRs 3 and 4 are measu
 ## Open questions
 
 1. **PR 5 version:** bump only if defaults or code change, or always?
-2. **PR 4 size threshold:** the Claude-only control did a ~130-line, 4-file task with a third of the delegated Claude output. Raise the "small" guideline above ~30 lines in 1–2 files, and to what?
+2. **PR 4 size threshold:** settled 2026-11-03 at about 300 changed lines in 6 files or fewer. There is no post-PR 4 benchmark; check it against usage data from real runs.
 3. **PR 6 reviewer:** which model, and should a subagent's tokens count toward the Claude-side numbers in `usage.js claude`?

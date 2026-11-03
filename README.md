@@ -79,7 +79,8 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30,
   "deepseekPricing": null,
-  "showDiff": "stat"
+  "showDiff": "stat",
+  "smallTaskPolicy": "ask"
 }
 ```
 
@@ -95,6 +96,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
 | `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
 | `showDiff` | `stat` / `full` | `stat` | `stat`: after each step Claude shows the changed files with `+/-` counts, and the full diff only when you ask. `full`: it also shows the full diff every time. |
+| `smallTaskPolicy` | `ask` / `direct` / `delegate` | `ask` | What Claude does when a task looks small: about 300 changed lines or fewer, in 6 files or fewer. `ask`: it asks whether to do the task itself or delegate it. `direct`: it does the task itself and tells you so. `delegate`: it always delegates. |
 
 Precedence for `model` and `maxTurns`: config file, then the `DEEPSEEK_MODEL` / `DEEPSEEK_MAX_TURNS` environment variables, then the defaults above. Other keys come from the config file or the defaults.
 
@@ -104,7 +106,7 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 
 ## What happens in a run
 
-1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. If `deepseekPricing` isn't set, it asks which currency to use (or whether to skip this run), looks up DeepSeek's prices, asks you for any it couldn't find, and saves them only after you confirm. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
+1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. If `deepseekPricing` isn't set, it asks which currency to use (or whether to skip this run), looks up DeepSeek's prices, asks you for any it couldn't find, and saves them only after you confirm. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`. Before all that, unless `smallTaskPolicy` is `delegate`, Claude checks whether the task looks small: about 300 changed lines or fewer, in 6 files or fewer. If it does, Claude asks whether to do it directly (`ask`, the default) or just does so (`direct`). It then plans and asks its questions as usual, edits the files itself and runs the tests through `run-check.js`, with no run folder and no commit. If the size is unclear, the run goes on, and Claude checks again once the steps are planned.
 2. **Plan.** Claude looks up what the code can answer and shows it to you to confirm. It asks you about every choice the goal leaves open (behaviour, names, interfaces, edge cases, tests, scope) and doesn't fill gaps on its own. Then it splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/` with a `plan.md` that records your answers. The rules are in `skills/claude-planning/SKILL.md`.
 3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background and reviews the step's diff from a snapshot of the working tree taken just before the coder started (without a git repo: the changed files). It reads the diff rather than whole files, and writes no extra tests or scripts of its own. For tests it reads the `VERIFY <cmd> -> exit <N>` lines DeepSeek ends its report with, and runs a command itself, through `run-check.js`, only when its line is missing. If something is wrong it writes `step-NN-fixK.md`, which lists only the problems and the changes needed, has you review it too in `step` mode, and resumes the same DeepSeek session; after a fix round it reads only what the fix changed. After `maxFixRounds` failed fixes it stops and asks you.
 4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts), leaving out the plugin's own `.deepseek-coder/` files. With the default `showDiff` of `stat` it shows the full diff only when you ask for it; with `full` it shows it every time. Without a git repo it lists the changed files only.

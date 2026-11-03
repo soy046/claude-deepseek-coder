@@ -131,3 +131,29 @@ test('invalid showDiff is rejected', (t) => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /showDiff must be one of stat \| full/);
 });
+
+test('missing smallTaskPolicy resolves to ask', (t) => {
+  const dir = makeProject({});
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = run(dir, ['--get', 'smallTaskPolicy']);
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, 'ask');
+});
+
+test('explicit smallTaskPolicy direct and delegate resolve as given', (t) => {
+  for (const policy of ['direct', 'delegate']) {
+    const dir = makeProject({ smallTaskPolicy: policy });
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const r = run(dir, ['--get', 'smallTaskPolicy']);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, policy);
+  }
+});
+
+test('invalid smallTaskPolicy is rejected', (t) => {
+  const dir = makeProject({ smallTaskPolicy: 'never' });
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = run(dir, ['--get', 'smallTaskPolicy']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /smallTaskPolicy must be one of ask \| direct \| delegate/);
+});

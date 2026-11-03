@@ -38,17 +38,29 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 1. **Existing run.** Run the marker `status`. If it prints `active`, another run is in progress or crashed recently:
    tell the user and ask whether to stop or to clear it (`stop`) and continue. `expired` or `none` means continue.
-2. **Config.** If `.deepseek-coder/config.json` does not exist:
+2. **Size check.** Run the resolve-config command with `--get smallTaskPolicy`. Without a config file it prints the
+   default, `ask`. If it fails, skip this item; item 4 shows the error. If it prints `delegate`, skip this item.
+   Otherwise estimate the size of the goal from its text and a quick look at the code it names. The task is **small**
+   if it clearly needs about 300 changed lines or fewer, in 6 files or fewer, tests included. If you can't tell,
+   treat it as not small and continue; Plan item 2 checks again.
+   - Small and `ask`: tell the user your estimate (about N changed lines in M files) and why it counts as small. Then
+     ask whether to do it directly, with two options: "Do it directly (Recommended)" and "Delegate to DeepSeek
+     anyway". If they pick delegate, continue with item 3 and don't check the size again in this run.
+   - Small and `direct`: say in one line `This looks small (about N changed lines in M files), so I'll do it directly
+     (smallTaskPolicy: direct).` and don't ask.
+   - Doing it directly: stop following this file here and follow "Small tasks done directly" at the end instead.
+3. **Config.** If `.deepseek-coder/config.json` does not exist:
    - Inspect the project (package.json scripts, pyproject.toml, Makefile, etc.) to find its test, lint and build commands.
    - Propose a complete config to the user showing every key: `allowedCommands` (what you found), `model`, `maxTurns`,
      `extraInstructions`, `approvalMode` (`plan` | `step` | `auto`), `gitMode` (`commit` | `stage` | `none`),
-     `maxFixRounds`, `markerExpiryMinutes`, `deepseekPricing` (propose `null`; step 4 sets it), `showDiff`
-     (`stat` | `full`). Show the plugin defaults for the others (run the resolve-config command to see them). Explain
-     that `allowedCommands` entries are prefix matches and are the only shell commands DeepSeek may run.
+     `maxFixRounds`, `markerExpiryMinutes`, `deepseekPricing` (propose `null`; item 5 sets it), `showDiff`
+     (`stat` | `full`), `smallTaskPolicy` (`ask` | `direct` | `delegate`). Show the plugin defaults for the others
+     (run the resolve-config command to see them). Explain that `allowedCommands` entries are prefix matches and are
+     the only shell commands DeepSeek may run.
    - Write the file only after the user approves it, with any changes they ask for.
-3. **Resolve.** Run the resolve-config command. If it fails, show the error and stop.
+4. **Resolve.** Run the resolve-config command. If it fails, show the error and stop.
    Use its `approvalMode`, `gitMode`, `maxFixRounds`, `showDiff` for the rest of the run.
-4. **Pricing.** If the resolved `deepseekPricing` is `null`:
+5. **Pricing.** If the resolved `deepseekPricing` is `null`:
    - Ask the user which currency to record DeepSeek prices in (3 uppercase letters, e.g. `USD` or `CNY`), or whether
      to skip pricing for this run. Skip: leave `deepseekPricing` as it is and continue. The usage tables then show
      tokens without a cost, and you ask again in the next run.
@@ -62,7 +74,7 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
      `"deepseekPricing": {"input": <cache miss>, "cacheHit": <cache hit>, "output": <output>, "currency": "<code>"}`
      only after the user confirms or corrects them. Then run the resolve-config command again; if it fails, show the
      error and stop.
-5. **Git.** Run `git rev-parse --is-inside-work-tree`.
+6. **Git.** Run `git rev-parse --is-inside-work-tree`.
    - Not a repo and `gitMode` is `none`: continue without git.
    - Not a repo and `gitMode` is `commit` or `stage`: ask the user whether they want to work with git.
      - Yes: ask permission to run `git init`, then run it. Then ask whether to commit the existing files
@@ -76,6 +88,9 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 1. Explore the codebase and ask the user every open question, as the planning skill's sections 1 and 2 say.
    Do not go on until every point is a confirmed fact or a decision the user made.
 2. Split the goal into small, ordered steps. Each step should be finishable by DeepSeek within its `maxTurns`.
+   If Preflight item 2 couldn't tell the task's size, and the plan now shows it is small (as defined there), tell
+   the user so before you create the run folder, and apply `smallTaskPolicy` as Preflight item 2 says. If they pick
+   doing it directly, or the policy is `direct`, follow "Small tasks done directly" with the plan you already have.
 3. Create the run folder `.deepseek-coder/plans/<YYYY-MM-DD-HHMM>-<slug>/` (local time; slug is 2-5 kebab-case words from the goal),
    then write `plan.md` in it (planning skill, section 3).
 4. Follow `approvalMode`:
@@ -205,6 +220,23 @@ h. **Accept.**
    Then copy the output of both usage-table commands from item 2 into the summary unchanged, each in its own
    code block: first the DeepSeek table, then the Claude table.
 5. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
+
+## Small tasks done directly
+
+When Preflight item 2 or Plan item 2 sends you here, you do the work yourself, without DeepSeek. There is no run
+folder, `plan.md`, spec, run marker, usage table, commit or staging. No run marker exists, so the edit guard lets you
+edit files.
+
+1. **Plan.** Follow the planning skill's sections 1 and 2: confirm the facts with the user and ask every open
+   question. If you came here from Plan item 2, that is already done. Then show a numbered step list (title and
+   one-line scope each) and continue without waiting for approval.
+2. **Edit.** Make the changes yourself, step by step.
+3. **Test.** Run the project's test commands with run-check: the resolved `allowedCommands` that run tests, or, when
+   there is no config, the test command you find in the project (package.json scripts, pyproject.toml, Makefile).
+   Use the log `deepseek-coder-direct-verify.log` in the system temp directory, not in the project. On `FAIL`, fix
+   the code and run it again.
+4. **Summarize.** List the changed files one per line, copy each command's `PASS` line, and say that the changes are
+   not committed or staged.
 
 ## Rules
 
