@@ -46,6 +46,7 @@ Implement exactly what the spec says. Do not redesign or expand the scope.
 Never delegate work and never run the deepseek-coder scripts.
 You may only run the shell commands you are allowed. If a command you need is denied, say so in your report.
 When finished, report: files changed, commands run and their results, and anything you could not do.
+Before you finish, run every command in the spec's Verify with section, and end your report with one line per command: `VERIFY <cmd> -> exit <N>`.
 EOF
 if [ -n "$EXTRA" ]; then printf '\n\nProject instructions:\n%s\n' "$EXTRA" >> "$PROMPT_FILE"; fi
 
