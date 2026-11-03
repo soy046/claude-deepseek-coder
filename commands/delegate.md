@@ -23,9 +23,14 @@ Run every command below from the project root. Plugin scripts:
 | Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>]` |
 | Usage tables | `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" "<run folder>"` (DeepSeek) and `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" claude "<run folder>"` (Claude) |
 | Step diffs | `node "${CLAUDE_PLUGIN_ROOT}/scripts/step-diff.js" <diff "<run folder>" <name> \| stat "<run folder>" <NN> \| run "<run folder>">` |
+| Verify check | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-check.js" --log "<log>" "<cmd>"` (run it with the maximum tool timeout, 600000 ms) |
 
 The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR`, `USAGE`,
-`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines.
+`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines. DeepSeek's report ends with one
+`VERIFY <cmd> -> exit <N>` line for each command in the spec's "Verify with" section.
+Run-check prints one `PASS` line when the command passes. When it fails it prints a `FAIL` line, the last 60 lines of
+output and the log path. It appends the full output to the log you name: `<run folder>/<spec name>-verify.log`
+(`step-01-verify.log`, `step-01-fix1-verify.log`, `final-verify.log`, `final-fix1-verify.log`).
 Right before each coder run, the coder command snapshots the working tree, named after the spec (`step-01`, `step-01-fix1`).
 Exit code 0 means the run finished, 1 means it failed (including hitting the turn limit), 3 means the recursion guard refused it.
 
@@ -105,19 +110,37 @@ c. **Delegate.** Run the coder command for this OS with the spec path, **in the 
 d. **Read the result.** Exit 3: stop the run and tell the user the recursion guard fired.
    Exit 1 or `ERROR: true`: count it as a failed attempt and go to (f).
 
-e. **Review.** Never trust DeepSeek's report alone.
+e. **Review.** Review the diff, not whole files, and read DeepSeek's test results instead of running the tests again.
    - In a git repo (any `gitMode`): run step-diff `diff "<run folder>" step-NN` and read it. It shows everything this
-     step changed since the snapshot taken before its first coder run.
+     step changed since the snapshot taken before its first coder run. Note the names of the tests it added.
    - Not a git repo: read every file the coder reports changing.
-   - Check every acceptance criterion and run the spec's verify commands yourself.
+   - Open a file, or part of one, only to settle a specific question the diff raises.
+   - Check every acceptance criterion against the diff. Do not write extra tests, fuzzers or scratch scripts. If test
+     coverage looks thin, say so in a fix spec and let DeepSeek add the tests.
+   - **Tests.** Compare the `VERIFY` lines at the end of DeepSeek's report with the spec's "Verify with" commands:
+     - Every command has a line with exit 0: the tests pass. Do not run them yourself.
+     - Any line has a non-zero exit: the step fails. Go to (f) and write the fix spec straight away, without
+       running anything first.
+     - A command has no line: run it once with run-check, log `<run folder>/step-NN-verify.log`. `PASS`: it passes.
+       `FAIL`: the step fails; go to (f).
 
 f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): write `<run folder>/step-NN-fixK.md`
-   listing each problem concretely (file, line or function, expected vs actual) and the change needed. If a problem
-   needs a decision the plan does not cover, ask the user first (planning skill, section 6). Run the implement-ready
-   check, and in `step` mode review the fix spec with the user as in (b). Then run the coder with that spec and the
-   resume option set to the `SESSION_ID` from the latest output. Review again: in a git repo, read only
-   step-diff `diff "<run folder>" step-NN-fixK` (what this fix changed); without a repo, read the files the fix reports
-   changing. Either way, check every acceptance criterion and run every verify command again.
+   with exactly these sections:
+
+   ```markdown
+   # Step NN fix K
+   ## Problems (file, line or function, expected vs actual)
+   ## Changes needed
+   ## Verify with
+   ```
+
+   List only the problems and the changes needed. Never restate the original spec: DeepSeek still has it in its
+   resumed session. If a problem needs a decision the plan does not cover, ask the user first (planning skill,
+   section 6). Run the implement-ready check, and in `step` mode review the fix spec with the user as in (b). Then run
+   the coder with that spec and the resume option set to the `SESSION_ID` from the latest output. Review again as in
+   (e): in a git repo, read only step-diff `diff "<run folder>" step-NN-fixK` (what this fix changed); without a repo,
+   read the files the fix reports changing. Either way, check every acceptance criterion and apply the test rules
+   from (e) to the fix's report, with run-check log `<run folder>/step-NN-fixK-verify.log`.
    After `maxFixRounds` failed fix rounds: **stop and ask the user.** Show the spec, the latest report and the failing
    checks. Leave the run marker in place. If the user tells you to edit the code yourself, end the run first (marker `stop`).
 
@@ -151,10 +174,26 @@ h. **Accept.**
 
 ## 4. Finish
 
-1. **Usage.** Run both usage-table commands with the run folder and keep their output.
-2. End the run: marker `stop`.
-3. Summarize: each step, what DeepSeek implemented, which fix rounds were needed and why, final test results,
-   and the run folder path. Include the combined list of files changed in the run: in a git repo, run step-diff
+1. **Final check.** Collect every distinct command from the "Verify with" sections of the step specs (`step-NN.md`).
+   If there are none, skip this item; the summary then says `Final check: no verify commands in any step.`
+   Otherwise run each command once with run-check, log `<run folder>/final-verify.log`.
+   - Every command prints `PASS`: go on to item 2.
+   - Any `FAIL`: for final fix round K (1 to `maxFixRounds`), write `<run folder>/final-fixK.md` with the fix-spec
+     sections from 3f, headed `# Final fix K`, listing the failing commands and the problems their output shows. If a
+     problem needs a decision the plan does not cover, ask the user first. Run the implement-ready check, and in
+     `step` mode review the spec with the user as in 3b. Run the coder with that spec in a **new** session (no resume
+     option), because the fix can span several steps. Review the change as in 3e: in a git repo, read step-diff
+     `diff "<run folder>" final-fixK`; without a repo, read the files the fix reports changing. Then show the user
+     what changed: list the changed files one per line, with no `+/-` counts. With `showDiff` `stat`, add the line
+     `Full diff: ask me to show it.`; with `full`, show the diff in a ```diff code block, without trimming it.
+     Accept it as in 3h, then run the final check again with the same log.
+   - After `maxFixRounds` failed final fix rounds: **stop and ask the user.** Show the failing run-check output and
+     the log path. Leave the run marker in place.
+2. **Usage.** Run both usage-table commands with the run folder and keep their output.
+3. End the run: marker `stop`.
+4. Summarize: each step, what DeepSeek implemented, which fix rounds and final fix rounds were needed and why, the
+   final check result (each command's `PASS` line, or that it was skipped), and the run folder path. Include the
+   combined list of files changed in the run: in a git repo, run step-diff
    `run "<run folder>"` and copy its output unchanged, for example:
 
    ```
@@ -163,9 +202,9 @@ h. **Accept.**
      A src/util.js   +12 -0  (step 02)
    ```
    Not a git repo: list each file the coder reported changing, with the step numbers that touched it.
-   Then copy the output of both usage-table commands from item 1 into the summary unchanged, each in its own
+   Then copy the output of both usage-table commands from item 2 into the summary unchanged, each in its own
    code block: first the DeepSeek table, then the Claude table.
-4. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
+5. If `gitMode` is `commit` and `git remote` lists a remote, ask the user whether to push. Never push without a yes.
 
 ## Rules
 
