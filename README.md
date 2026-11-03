@@ -46,6 +46,16 @@ export DEEPSEEK_API_KEY="<your key>"
 
 Never put the key in the project config or commit it.
 
+During a run Claude runs tests through the plugin's `run-check.js`, which prints one line when they pass. So that Claude Code doesn't ask each time, add these allow rules to `~/.claude/settings.json` (all projects) or your project's `.claude/settings.json`. The first covers the Bash tool, the second the PowerShell tool on Windows:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(node *run-check.js*)", "PowerShell(node *run-check.js*)"]
+  }
+}
+```
+
 ## Use
 
 ```
@@ -96,12 +106,12 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 
 1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. If `deepseekPricing` isn't set, it asks which currency to use (or whether to skip this run), looks up DeepSeek's prices, asks you for any it couldn't find, and saves them only after you confirm. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
 2. **Plan.** Claude looks up what the code can answer and shows it to you to confirm. It asks you about every choice the goal leaves open (behaviour, names, interfaces, edge cases, tests, scope) and doesn't fill gaps on its own. Then it splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/` with a `plan.md` that records your answers. The rules are in `skills/claude-planning/SKILL.md`.
-3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background, reviews the step's diff from a snapshot of the working tree taken just before the coder started (without a git repo: the changed files) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md`, has you review it too in `step` mode, and resumes the same DeepSeek session; after a fix round it reads only what the fix changed, but re-runs every check. After `maxFixRounds` failed fixes it stops and asks you.
+3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background and reviews the step's diff from a snapshot of the working tree taken just before the coder started (without a git repo: the changed files). It reads the diff rather than whole files, and writes no extra tests or scripts of its own. For tests it reads the `VERIFY <cmd> -> exit <N>` lines DeepSeek ends its report with, and runs a command itself, through `run-check.js`, only when its line is missing. If something is wrong it writes `step-NN-fixK.md`, which lists only the problems and the changes needed, has you review it too in `step` mode, and resumes the same DeepSeek session; after a fix round it reads only what the fix changed. After `maxFixRounds` failed fixes it stops and asks you.
 4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts), leaving out the plugin's own `.deepseek-coder/` files. With the default `showDiff` of `stat` it shows the full diff only when you ask for it; with `full` it shows it every time. Without a git repo it lists the changed files only.
 5. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
-6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it, a table of DeepSeek's tokens for each coder run (with an estimated cost when `deepseekPricing` is set), and a best-effort table of Claude's own tokens from the session transcript. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
+6. **Finish.** Claude runs every step's verify commands once more through `run-check.js` as a final check. If one fails, it writes `final-fixK.md` and runs it in a new DeepSeek session, up to `maxFixRounds` times. Then Claude summarizes the run, including a combined list of every file changed and which steps touched it, a table of DeepSeek's tokens for each coder run (with an estimated cost when `deepseekPricing` is set), and a best-effort table of Claude's own tokens from the session transcript. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
 
-Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`usage.jsonl`), the run's start time and transcript path (`run.json`) and the snapshot hashes (`.snap-*`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
+Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`usage.jsonl`), the full test output (`*-verify.log`), the run's start time and transcript path (`run.json`) and the snapshot hashes (`.snap-*`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
 
 ## Safety
 
@@ -122,6 +132,7 @@ Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`us
 | Claude can't edit a file: "a delegation run is active" | Expected during a run. If no run is active, run `/deepseek-coder:reset`. |
 | Coder `STATUS: error_max_turns` | The step was too big. Raise `maxTurns` or ask Claude to split the step. |
 | Coder says a command was denied | Add it to `allowedCommands`. |
+| Claude Code asks permission every time Claude runs `run-check.js` | Add the two allow rules from Install. |
 | "running scripts is disabled on this system" (Windows) | The command uses `-ExecutionPolicy Bypass`; make sure it wasn't removed. |
 | Non-English text garbled | Save spec files as UTF-8 (the wrapper reads and writes UTF-8). |
 | Cost in the JSON log looks wrong | `total_cost_usd` and `modelUsage` in the log use Claude prices and add up across fix rounds. Use the coder's `USAGE` line or, from the project root, `node "<plugin folder>/scripts/usage.js" <run folder>` instead. |

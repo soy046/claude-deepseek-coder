@@ -8,6 +8,7 @@ This guide is for anyone who has just installed the deepseek-coder plugin and wa
 - [Before you start](#before-you-start)
 - [Install](#install)
 - [Set your API key](#set-your-api-key)
+- [Let Claude run tests without asking](#let-claude-run-tests-without-asking)
 - [Your first run](#your-first-run)
 - [Choosing settings](#choosing-settings)
 - [Writing good goals](#writing-good-goals)
@@ -18,7 +19,7 @@ This guide is for anyone who has just installed the deepseek-coder plugin and wa
 
 ## What it does
 
-The plugin splits the work between two models. Claude, in your normal session, plans and reviews: it explores the code, breaks your goal into steps, writes a spec for each step, reviews the result and runs the tests. DeepSeek writes the code: each spec runs in a separate headless Claude Code process (`claude -p`) whose API calls go to DeepSeek's Anthropic-compatible endpoint, and that process reads and edits files and runs the commands you allow.
+The plugin splits the work between two models. Claude, in your normal session, plans and reviews: it explores the code, breaks your goal into steps, writes a spec for each step, reviews the result and checks the tests. DeepSeek writes the code: each spec runs in a separate headless Claude Code process (`claude -p`) whose API calls go to DeepSeek's Anthropic-compatible endpoint, and that process reads and edits files and runs the commands you allow.
 
 ```
 You -> /deepseek-coder:delegate <goal>
@@ -67,6 +68,20 @@ export DEEPSEEK_API_KEY="<your key>"
 
 Never put the key in the project config or commit it. The plugin passes it to the coder process through the environment only, and never writes it into a file or a command.
 
+## Let Claude run tests without asking
+
+During a run, Claude runs tests through the plugin's `run-check.js` script. It prints one line when the tests pass, and when they fail, a short report with the last 60 lines of output. The full output goes to a log in the run folder, such as `step-01-verify.log` or `final-verify.log`. Without an allow rule, Claude Code asks you every time. Add these two rules to `~/.claude/settings.json` (all projects) or to your project's `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(node *run-check.js*)", "PowerShell(node *run-check.js*)"]
+  }
+}
+```
+
+The first rule covers Claude's Bash tool; the second covers its PowerShell tool on Windows.
+
 ## Your first run
 
 Here is a real run, start to finish. The goal was:
@@ -89,7 +104,7 @@ add a subtract(a, b) function to src/math.js with a test
 
 **5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. The coder's output ends with a `USAGE` line with the tokens DeepSeek used, and an estimated cost when prices are set. In this run DeepSeek took 7 turns and needed no fix rounds.
 
-**6. Claude shows what changed.** DeepSeek's own report is never trusted on its own: Claude reads the diff and runs the tests itself. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
+**6. Claude shows what changed.** Claude reviews the step's diff, not whole files, and checks the `VERIFY` lines that end DeepSeek's report: one per verify command, with its exit code. It runs a command itself, through `run-check.js`, only when its line is missing. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
 
 ```
 Step 01 changed 2 files:
@@ -118,7 +133,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 Co-Authored-By: DeepSeek deepseek-flash[1m] <noreply@deepseek.com>
 ```
 
-**8. Claude summarizes the run.** You get each step, what DeepSeek implemented, which fix rounds were needed and why, the final test results, and the run folder path. The summary also includes a combined list of every file changed in the run, with the steps that touched it:
+**8. Claude summarizes the run.** First Claude runs every step's verify commands once more through `run-check.js` as a final check; each passing command prints a single `PASS` line. Then you get each step, what DeepSeek implemented, which fix rounds were needed and why, the final check result, and the run folder path. The summary also includes a combined list of every file changed in the run, with the steps that touched it:
 
 ```
 Files changed in this run:
@@ -216,11 +231,13 @@ numbers. Verify with npm test.
 
 ## Fix rounds: when Claude stops to ask you
 
-After DeepSeek finishes a step, Claude reviews the result. If something fails, Claude writes a fix spec, `step-NN-fixK.md`, that lists each problem concretely — file, line or function, expected versus actual — and resumes the same DeepSeek session with it. That attempt is a **fix round**.
+After DeepSeek finishes a step, Claude reviews the result. If something fails, Claude writes a fix spec, `step-NN-fixK.md`, and resumes the same DeepSeek session with it. Under a `# Step NN fix K` heading it has three sections: Problems (file, line or function, expected versus actual), Changes needed, and Verify with. It lists only what is wrong and never repeats the original spec, which DeepSeek still has. That attempt is a **fix round**.
 
 `maxFixRounds` (default `3`) limits how many correction attempts a step gets. After the last failed fix round, Claude stops, shows you what failed — the spec, the latest DeepSeek report and the failing checks — and asks you what to do. The run marker stays in place while you decide. If you tell Claude to edit the code itself, it ends the run first so the edit guard lets it through.
 
-After each fix round Claude reads only what the fix changed, compared with a snapshot taken just before the fix started, and then re-checks every acceptance criterion and re-runs every verify command.
+After each fix round Claude reads only what the fix changed, compared with a snapshot taken just before the fix started, then re-checks every acceptance criterion and reads the `VERIFY` lines in DeepSeek's new report.
+
+**The final check.** When every step is done, Claude runs each step's verify commands once more through `run-check.js`. If one fails, it writes `final-fixK.md` in the same format and runs it in a new DeepSeek session, because the fix may touch more than one step. It gets up to `maxFixRounds` attempts; after that Claude stops and asks you, as above. In the run's combined file list, a final fix's files are counted under the last step.
 
 ## Safety in plain words
 
