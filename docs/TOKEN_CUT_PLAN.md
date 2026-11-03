@@ -2,7 +2,7 @@
 
 This plan covers five pull requests that reduce the tokens the Claude planner spends during a delegation run, without making DeepSeek's results worse. It records the decisions made so far, what is finished, and what each remaining PR will change.
 
-Decisions were settled on 2026-10-29. Status is as of 2026-11-01. Line numbers refer to `main` with PR 2 re-landed.
+Decisions were settled on 2026-10-29 (PR 3 on 2026-11-03). Status is as of 2026-11-03. Line numbers refer to `main` with PR 2 re-landed.
 
 ## Why
 
@@ -18,10 +18,11 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | PR | What | Version | Status |
 |---|---|---|---|
 | 1 (+1b) | Measure usage on both sides | 0.2.1 | Merged (#2) |
-| 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-land open as #5 |
-| 3 | Short test output, smaller fix rounds | 0.4.0 | Not started |
+| 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-landed (#5) |
+| 3 | Short test output, diff-only review, smaller fix rounds | 0.4.0 | Planned (2026-11-03), branch `feat/run-check` |
 | 4 | Size check before delegating small tasks | 0.5.0 | Not started |
 | 5 | Model names and the planner model | not set | Not started |
+| 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
 
 ## Decisions
 
@@ -211,25 +212,52 @@ Most of the gap between the runs is step 3g. Run 2 re-typed the full diff for st
 
 Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0.2.1-run2`.
 
-## PR 3: short test output and smaller fix rounds (0.4.0)
+## PR 3: short test output, diff-only review and smaller fix rounds (0.4.0)
+
+Decided 2026-11-03. Two of the 2026-10-28 review ideas land here: DeepSeek's own test runs count, and Claude reviews the diff instead of whole files. Both large delegated runs read the diffs and the test files and fuzzed the printer in step 4, so review is a real share of the planner's output on large tasks.
+
+**How it's built:** branch `feat/run-check` from `main` (PR 2 is merged as #5). The first commit is this plan update. Then a delegation run on this repo in `plan` mode, and Claude verifies everything itself afterwards.
+
+Step letters below match `commands/delegate.md` on `main`: 3d reads the result, 3e reviews, 3f runs fix rounds, 3g shows the changes.
 
 **New `scripts/run-check.js --log <file> "<cmd>"`**
-- Runs the command through a shell (`cmd.exe` on Windows) with `NO_COLOR=1`, and strips ANSI codes.
-- Saves the full output to `<run folder>/step-NN-verify.log`.
+- Runs the command through a shell (`cmd.exe` on Windows, `sh` elsewhere) with `NO_COLOR=1` in its environment, and strips ANSI codes from everything it prints and logs.
+- Appends to the log and never overwrites it. After the command finishes it writes a header, `=== <cmd> | <ISO time, UTC> | exit <N>, <secs>s ===`, followed by the full output.
+- One log per spec, in the run folder: `step-NN-verify.log`, `step-NN-fixK-verify.log`, `final-verify.log`, `final-fixK-verify.log`. Several commands for one spec go into the same log.
 - On pass, prints one line: `PASS <cmd> (exit 0, 8.2s)`.
-- On fail, prints `FAIL`, the last 60 lines and the log path.
+- On fail, prints `FAIL <cmd> (exit <N>, <secs>s)`, the last 60 lines of output (fixed, no flag or config) and `Log: <path>`.
 - Exits with the command's own exit code.
+- Has no timeout of its own. `delegate.md` tells Claude to call it with the maximum tool timeout (600000 ms).
+- Tests in `scripts/test/run-check.test.js` (node:test): the pass line, and on fail the tail, the log path and exit codes 0, 1 and 2 passed through; two runs appending to one log, each with its header; ANSI stripping in output and log, and `NO_COLOR=1` reaching the child; quoted arguments and `&&` going through the shell.
+
+**Runner role prompts** (`deepseek-coder.ps1:36-42`, `deepseek-coder.sh:43-49`, same text in both): add "Before you finish, run every command in the spec's Verify with section, and end your report with one line per command: `VERIFY <cmd> -> exit <N>`."
 
 **`commands/delegate.md`**
-- 3e (`delegate.md:112`): run verify commands only through `run-check.js`, with a long tool timeout for slow suites.
-- 3f (`delegate.md:114-120`): fix specs list only the problems and the changes needed, and never restate the original spec. Today nothing tells Claude not to restate it.
-- 3d: if DeepSeek's report shows a failing verify command, write the fix spec straight away.
+- Script table: a row for `run-check.js`, with the 600000 ms tool timeout.
+- 3e, review (diff-only, with no exceptions and no per-step "deep review" flag):
+  - In a git repo, read the step's step-diff `diff` and the names of the tests it added. Open a file, or part of one, only to settle a specific question the diff raises. Without a repo, read the files the coder reports changing, as today.
+  - Don't write extra tests, fuzzers or scratch scripts. If coverage looks thin, say so in a fix spec and let DeepSeek add the tests.
+- 3e, tests: Claude reads DeepSeek's `VERIFY` lines instead of running the tests.
+  - Every verify command in the spec has a line with exit 0: accept, with no run.
+  - Any line with a non-zero exit: write the fix spec straight away, without re-running anything.
+  - A verify command with no line: run that command once through `run-check.js` (log `step-NN-verify.log`). On FAIL, write a fix spec.
+  - "Run the spec's verify commands yourself" (`delegate.md:112`) and "run every verify command again" (`delegate.md:120`) are replaced by these rules. After a fix round the same rules apply to the fix's report.
+- 3f, fix specs use a fixed template, and never restate the original spec (DeepSeek still has it in its resumed session):
 
-**Runner role prompts** (`deepseek-coder.ps1:40-41`, `deepseek-coder.sh:47-48`): the report must list each verify command run and its exit code. Both copies get the same edit.
+  ```markdown
+  # Step NN fix K
+  ## Problems (file, line or function, expected vs actual)
+  ## Changes needed
+  ## Verify with
+  ```
+- 4, Finish, new first item, **final check:** run every distinct command from the step specs' "Verify with" sections once through `run-check.js` (log `final-verify.log`). If any fails, write `final-fixK.md` (same template, heading `# Final fix K`) and run it in a **new** coder session, not a resumed one, since it can span steps. Review it with step-diff `diff "<run folder>" final-fixK` and run the final check again. Each final fix is accepted as in 3h (its own commit in `commit` mode). After `maxFixRounds` failed final fixes, stop and ask the user, leaving the run marker in place. Usage tables, marker `stop` and the summary come after the final check passes.
+- Known limitation, accepted: `step-diff stat` and `run` count a final fix's files as the last step's, because the last step's range runs to the working tree. Final fixes should be rare, so step-diff doesn't change.
 
-**Config:** `maxFixRounds` stays at 3 until usage data shows how often round 3 succeeds.
+**Config:** no new keys. `maxFixRounds` stays at 3 until usage data shows how often round 3 succeeds.
 
-**Docs:** the allow rule, the verify log, and the shorter fix specs in README, the user guide and the developer guide.
+**Docs** (README, user guide, developer guide): two allow rules, `Bash(node *run-check.js*)` and `PowerShell(node *run-check.js*)` (PowerShell rules use the same shape as Bash rules, per the Claude Code permissions docs); the verify logs and their names; the `VERIFY` lines; diff-only review; the final check and final fixes; the fix-spec template. Bump `plugin.json` to 0.4.0.
+
+**Measure:** no separate 0.3.0 arm (decided 2026-11-03). Measure once after PRs 3 and 4, as the order section says: small benchmark ×2 plus a large-benchmark arm, since diff-only review should matter most there. Watch fix rounds, final fixes and the spot-check score: lighter review and trusted test reports must not let bugs through.
 
 ## PR 4: size check before delegating (0.5.0)
 
@@ -248,6 +276,18 @@ Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0
 - Change the default `model` only if the test shows a difference.
 - Document that planning and review run on the user's session model, and that Sonnet is the cheaper choice for the planner.
 
+## PR 6: optional smaller review model (proposed 2026-11-03)
+
+The third 2026-10-28 review idea. Not decided; build after PRs 3 and 4 are measured, so its effect can be told apart from theirs.
+
+- **New config key `reviewModel`:** unset by default (Claude reviews, as today). When set (for example `haiku`), step 3d hands the review to a subagent on that model.
+- **What the reviewer gets:** the step's `git diff`, the step spec and the `run-check.js` line. Not the goal, the plan or earlier steps.
+- **What it returns:** `OK`, or a short list of concerns, each naming a file and line. Claude reads only that verdict, and on concerns writes a fix spec (PR 3's 3f rules apply).
+- **Guard:** Claude still runs `run-check.js` itself, so a passing review never stands in for passing tests.
+- **Risk:** a weaker reviewer misses bugs that show up later as fix rounds or spot-check failures. Make it a default only if fix rounds and spot-check scores hold.
+- **Measure:** its own arm on both benchmarks (small ×2, large ×2), against the PR 4 runs. Compare Claude output tokens, the reviewer model's tokens (priced separately), fix rounds and spot-check score.
+- **Docs:** the config tables, and a note in the user guide on the trade-off.
+
 ## Lessons from PRs 1 and 2
 
 - `usage` in a coder log covers one whole coder run. `modelUsage` and `total_cost_usd` add up across `--resume` and use Claude prices, so never read them.
@@ -258,6 +298,6 @@ Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0
 
 ## Open questions
 
-1. **PR 3 base branch:** start after PR 2 is re-landed on `main`, or branch from the re-land branch before it merges?
-2. **PR 5 version:** bump only if defaults or code change, or always?
-3. **PR 4 size threshold:** the Claude-only control did a ~130-line, 4-file task with a third of the delegated Claude output. Raise the "small" guideline above ~30 lines in 1–2 files, and to what?
+1. **PR 5 version:** bump only if defaults or code change, or always?
+2. **PR 4 size threshold:** the Claude-only control did a ~130-line, 4-file task with a third of the delegated Claude output. Raise the "small" guideline above ~30 lines in 1–2 files, and to what?
+3. **PR 6 reviewer:** which model, and should a subagent's tokens count toward the Claude-side numbers in `usage.js claude`?
