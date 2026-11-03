@@ -68,7 +68,8 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
   "gitMode": "commit",
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30,
-  "deepseekPricing": null
+  "deepseekPricing": null,
+  "showDiff": "stat"
 }
 ```
 
@@ -83,6 +84,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
 | `maxFixRounds` | positive integer | `3` | Correction attempts per step before Claude stops and asks you. |
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
 | `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
+| `showDiff` | `stat` / `full` | `stat` | `stat`: after each step Claude shows the changed files with `+/-` counts, and the full diff only when you ask. `full`: it also shows the full diff every time. |
 
 Precedence for `model` and `maxTurns`: config file, then the `DEEPSEEK_MODEL` / `DEEPSEEK_MAX_TURNS` environment variables, then the defaults above. Other keys come from the config file or the defaults.
 
@@ -94,12 +96,12 @@ The config and the run folders live in `.deepseek-coder/` rather than `.claude/`
 
 1. **Preflight.** Claude checks for a leftover run, creates the config if missing, and checks git. If `deepseekPricing` isn't set, it asks which currency to use (or whether to skip this run), looks up DeepSeek's prices, asks you for any it couldn't find, and saves them only after you confirm. In a folder that isn't a git repo, it asks whether you want git and offers `git init`; if you say no, it saves `"gitMode": "none"`.
 2. **Plan.** Claude looks up what the code can answer and shows it to you to confirm. It asks you about every choice the goal leaves open (behaviour, names, interfaces, edge cases, tests, scope) and doesn't fill gaps on its own. Then it splits the goal into steps and creates a run folder `.deepseek-coder/plans/<date-time>-<slug>/` with a `plan.md` that records your answers. The rules are in `skills/claude-planning/SKILL.md`.
-3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background, reviews the diff (or the changed files with `gitMode: none`) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md`, has you review it too in `step` mode, and resumes the same DeepSeek session. After `maxFixRounds` failed fixes it stops and asks you.
-4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts) and the full diff in the conversation, leaving out the plugin's own `.deepseek-coder/` files. With `gitMode: none` it lists the changed files only.
+3. **Each step.** Claude writes `step-NN.md` and, with the default `approvalMode` of `step`, shows you the full spec and waits for your approval. It then runs the coder in the background, reviews the step's diff from a snapshot of the working tree taken just before the coder started (without a git repo: the changed files) and runs the tests itself. If something is wrong it writes `step-NN-fixK.md`, has you review it too in `step` mode, and resumes the same DeepSeek session; after a fix round it reads only what the fix changed, but re-runs every check. After `maxFixRounds` failed fixes it stops and asks you.
+4. **Show the changes.** Before accepting a step, Claude shows you the files DeepSeek changed (status and `+/-` line counts), leaving out the plugin's own `.deepseek-coder/` files. With the default `showDiff` of `stat` it shows the full diff only when you ask for it; with `full` it shows it every time. Without a git repo it lists the changed files only.
 5. **Accept.** Depending on `gitMode`, Claude commits (Conventional Commits with `Co-Authored-By` trailers for Claude and the DeepSeek model), stages, or does nothing.
 6. **Finish.** Claude summarizes the run, including a combined list of every file changed and which steps touched it, a table of DeepSeek's tokens for each coder run (with an estimated cost when `deepseekPricing` is set), and a best-effort table of Claude's own tokens from the session transcript. In `commit` mode with a remote, it asks whether to push; it never pushes on its own.
 
-Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`usage.jsonl`) and the run's start time and transcript path (`run.json`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
+Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`usage.jsonl`), the run's start time and transcript path (`run.json`) and the snapshot hashes (`.snap-*`) are kept in the run folder. Add `.deepseek-coder/plans/` to `.gitignore` if you don't want them committed.
 
 ## Safety
 
@@ -107,6 +109,7 @@ Every spec, the coder's raw JSON output (`step-NN.json`), the usage records (`us
 - **Recursion guard.** The coder process can't start another delegation: the wrapper refuses to run inside a coder (`DEEPSEEK_CODER_ACTIVE=1`), and the coder is denied shell launchers, the Skill tool and subagents.
 - **Coder permissions.** The coder may use Read, Edit, Write, Glob, Grep and your `allowedCommands` only. No web access, no MCP servers, no `git push`.
 - **Leftover marker.** If a run crashes, the marker expires after `markerExpiryMinutes` of inactivity, or you can clear it with `/deepseek-coder:reset`.
+- **Snapshots.** Before each coder run, the plugin snapshots the working tree as a git tree through a private index. Your real index, HEAD, branches and stash are never touched; the snapshots are unreferenced and `git gc` removes them eventually. Gitignored files are not captured.
 
 ## Troubleshooting
 
