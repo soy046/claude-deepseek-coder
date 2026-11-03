@@ -96,6 +96,8 @@ add a subtract(a, b) function to src/math.js with a test
 /deepseek-coder:delegate add a subtract(a, b) function to src/math.js with a test
 ```
 
+A goal this small would, by default, make Claude say so first and ask whether to do it directly or delegate it (see `smallTaskPolicy` below). This walkthrough shows the delegated run.
+
 **2. Claude proposes a config.** The first time you use the plugin in a project, there is no `.deepseek-coder/config.json`. Claude inspects the project to find its test, lint and build commands, then shows you a complete config — every key, with `allowedCommands` filled in from what it found. It writes the file only after you approve it, with any changes you ask for. Then, while `deepseekPricing` is not set, Claude asks which currency you want prices in, or whether to skip it this time. It looks up DeepSeek's prices for your model, asks you for any it couldn't find, and writes them only after you confirm them.
 
 **3. Claude asks its questions and plans.** Claude explores the code. It shows you what it found there, such as where `src/math.js` exports its functions and which command runs the tests, and asks you to confirm. Then it asks about every choice the goal leaves open instead of guessing. In this example, that could be whether `subtract` should check its arguments' types and which test cases to add. If an answer is vague, Claude offers concrete options and asks again. When nothing is open, it splits the goal into small ordered steps, creates a run folder at `.deepseek-coder/plans/<date-time>-<slug>/`, and records your answers in `plan.md` there. It shows you the numbered step list. In this example the plan had one step.
@@ -162,7 +164,8 @@ Settings live in `.deepseek-coder/config.json` in your project. Here is an examp
   "maxFixRounds": 3,
   "markerExpiryMinutes": 30,
   "deepseekPricing": null,
-  "showDiff": "stat"
+  "showDiff": "stat",
+  "smallTaskPolicy": "ask"
 }
 ```
 
@@ -180,6 +183,7 @@ These are all the keys:
 | `markerExpiryMinutes` | positive integer | `30` | Minutes of inactivity after which a leftover run marker is ignored. |
 | `deepseekPricing` | `null` or `{"input", "cacheHit", "output", "currency"}` | `null` | DeepSeek prices per 1M tokens (input on a cache miss, input on a cache hit, output) and a 3-letter currency code such as `USD`. When set, the coder output and the usage table show an estimated cost. While it is `null`, Claude asks for it at the start of each run. |
 | `showDiff` | `stat` / `full` | `stat` | `stat`: after each step Claude shows the changed files with `+/-` counts, and the full diff only when you ask. `full`: it also shows the full diff every time. |
+| `smallTaskPolicy` | `ask` / `direct` / `delegate` | `ask` | What Claude does when a task looks small: about 300 changed lines or fewer, in 6 files or fewer. `ask`: it asks whether to do the task itself or delegate it. `direct`: it does the task itself and tells you so. `delegate`: it always delegates. |
 
 When Claude proposes the config, it fills in `allowedCommands` from the project's test, lint and build commands; you can add or remove entries before approving. If the key is left out, the default is `[]`, and DeepSeek can then run no shell commands. Use `extraInstructions` for project rules the coder should always follow, such as a style guide or libraries to avoid; those rules are appended to its system prompt.
 
@@ -190,6 +194,8 @@ When Claude proposes the config, it fills in `allowedCommands` from the project'
 **`deepseekPricing`.** Leave it `null` and Claude asks for it at the start of each run; you can skip it. Prices are per 1M tokens: `input` is input on a cache miss, `cacheHit` is input on a cache hit, and `output` is output. `currency` is a 3-letter code such as `USD` or `CNY`. A set value looks like `{"input": 0.27, "cacheHit": 0.07, "output": 1.1, "currency": "USD"}` (example numbers, not current prices). Claude only writes prices you have confirmed.
 
 **`showDiff`.** Use `stat` (the default) to see only the list of changed files after each step; Claude still reads the full diff itself to review it, and shows it to you when you ask. Use `full` if you want every step's full diff in the conversation, which makes long runs much longer.
+
+**`smallTaskPolicy`.** For a small task, about 300 changed lines or fewer in 6 files or fewer, delegating costs more Claude tokens than letting Claude write the code, because planning, specs and review add up. With `ask` (the default), Claude gives its estimate and asks whether to do the task directly. Use `direct` to have it do small tasks itself without asking, and `delegate` to always delegate. When Claude does a task directly, it still confirms facts and asks its questions first, then edits the files and runs the tests itself. There is no run folder, no usage table and no commit, so you review and commit the changes yourself.
 
 **`allowedCommands`.** These are the only shell commands DeepSeek may run. Entries are prefix matches, so `"npm test"` also allows `npm test -- --watch=false`, but not `npm run test`. Use commands that match your project:
 
@@ -271,7 +277,11 @@ Claude Code asks for permission on every write inside `.claude/`, even with allo
 
 **Can Claude start a run without the slash command?**
 
-Yes. The plugin includes a skill, so when you ask Claude to implement, build, add to, fix or refactor code, it may start the same workflow on its own. It follows the same config and the same run steps as `/deepseek-coder:delegate`.
+Yes. The plugin includes a skill, so when you ask Claude to implement, build, add to, fix or refactor code, it may start the same workflow on its own. It follows the same config and the same run steps as `/deepseek-coder:delegate`, including the size check: a small task may be done by Claude directly (see `smallTaskPolicy`).
+
+**Why did Claude do my task itself?**
+
+The task looked small: about 300 changed lines or fewer, in 6 files or fewer. For a task that size, delegating costs more Claude tokens than doing it directly. With the default `smallTaskPolicy` of `ask`, Claude asks first, and you can pick "Delegate to DeepSeek anyway". Set `"smallTaskPolicy": "delegate"` in `.deepseek-coder/config.json` to always delegate, or `"direct"` to skip the question.
 
 **What if my project isn't a git repository?**
 

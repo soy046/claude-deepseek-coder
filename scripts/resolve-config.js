@@ -23,10 +23,12 @@ const DEFAULTS = {
   markerExpiryMinutes: 30,
   deepseekPricing: null,
   showDiff: 'stat',
+  smallTaskPolicy: 'ask',
 };
 const APPROVAL_MODES = ['plan', 'step', 'auto'];
 const GIT_MODES = ['commit', 'stage', 'none'];
 const SHOW_DIFF = ['stat', 'full'];
+const SMALL_TASK_POLICIES = ['ask', 'direct', 'delegate'];
 const FILE_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep'];
 
 function fail(msg) {
@@ -95,6 +97,7 @@ function resolve(projectDir) {
     markerExpiryMinutes: positiveInt(file.markerExpiryMinutes ?? DEFAULTS.markerExpiryMinutes, 'markerExpiryMinutes'),
     deepseekPricing: pricing(file.deepseekPricing ?? DEFAULTS.deepseekPricing),
     showDiff: file.showDiff ?? DEFAULTS.showDiff,
+    smallTaskPolicy: file.smallTaskPolicy ?? DEFAULTS.smallTaskPolicy,
   };
 
   if (!Array.isArray(cfg.allowedCommands) || cfg.allowedCommands.some((c) => typeof c !== 'string' || !c.trim())) {
@@ -105,6 +108,7 @@ function resolve(projectDir) {
   if (!APPROVAL_MODES.includes(cfg.approvalMode)) fail(`approvalMode must be one of ${APPROVAL_MODES.join(' | ')}`);
   if (!GIT_MODES.includes(cfg.gitMode)) fail(`gitMode must be one of ${GIT_MODES.join(' | ')}`);
   if (!SHOW_DIFF.includes(cfg.showDiff)) fail(`showDiff must be one of ${SHOW_DIFF.join(' | ')}`);
+  if (!SMALL_TASK_POLICIES.includes(cfg.smallTaskPolicy)) fail(`smallTaskPolicy must be one of ${SMALL_TASK_POLICIES.join(' | ')}`);
 
   // Prefix match: "npm test" allows "npm test" and "npm test -- --foo"
   cfg.allowedTools = FILE_TOOLS.concat(cfg.allowedCommands.map((c) => `Bash(${c.trim()}:*)`));
