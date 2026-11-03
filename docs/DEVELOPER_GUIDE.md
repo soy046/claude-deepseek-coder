@@ -30,6 +30,7 @@ Keep the quotes: Node expands the pattern itself, so the command works the same 
 | `scripts/print-result.js` | Turns a coder log into the summary the planner reads, including the `USAGE` line, and appends the run to `usage.jsonl`. |
 | `scripts/usage.js` | Token usage: the DeepSeek table for a run folder (`usage.js <run folder>`) and the Claude table from the session transcript (`usage.js claude <run folder>`). |
 | `scripts/step-diff.js` | Working-tree snapshots through a private git index, and change lists between them: `snap`, `diff`, `stat` (one step) and `run` (the whole run, with step numbers). |
+| `scripts/run-check.js` | Runs one verify command for the planner through the shell with `NO_COLOR=1`. Prints one `PASS` line, or `FAIL`, the last 60 lines and the log path; appends the full ANSI-stripped output to the log; exits with the command's exit code. |
 | `hooks/hooks.json`, `hooks/edit-guard.js` | The edit guard: during a run, blocks the planner from editing source files, and records the planner's transcript path in `run.json`. |
 
 How they call each other:
@@ -38,6 +39,7 @@ How they call each other:
 - `print-result.js` uses `usage.js`, which gets `deepseekPricing` from `resolve-config.js --get`.
 - `run-marker.js` and `edit-guard.js` call `resolve-config.js --get markerExpiryMinutes`.
 - The runner scripts call `step-diff.js snap` right before the coder starts, naming the snapshot after the spec; `delegate.md` has the planner call `diff`, `stat` and `run`.
+- `delegate.md` has the planner call `run-check.js` for a verify command whose `VERIFY` line is missing from DeepSeek's report, and for the final check. The runner scripts' role prompt asks DeepSeek to end its report with one `VERIFY <cmd> -> exit <N>` line per verify command.
 
 ## Run folder files
 
@@ -48,6 +50,8 @@ Each run gets a folder `.deepseek-coder/plans/<date-time>-<slug>/`. The run mark
 | `plan.md` | the planner | The user's decisions, the confirmed facts and the step list. |
 | `step-NN.md` | the planner | The spec for step NN. |
 | `step-NN-fixK.md` | the planner | Fix round K for step NN. |
+| `final-fixK.md` | the planner | Final fix round K, run in a new coder session when the final check fails. |
+| `step-NN-verify.log`, `step-NN-fixK-verify.log`, `final-verify.log`, `final-fixK-verify.log` | `run-check.js` | The full output of every verify command the planner ran for that spec, appended, each entry under a `=== <cmd> \| <time> \| exit <N>, <secs>s ===` header. |
 | `step-NN.json`, `step-NN-fixK.json` | the runner script | The coder's raw JSON output for that spec. |
 | `usage.jsonl` | `print-result.js` | One line per coder run: `at, spec, sessionId, turns, status, error, input, cacheRead, cacheWrite, output`. |
 | `run.json` | `run-marker.js start`, then `edit-guard.js` | `startedAt`, and the planner's `transcriptPath` once the planner writes into the run folder. |
