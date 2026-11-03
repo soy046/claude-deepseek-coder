@@ -263,3 +263,40 @@ test('usage errors exit 1', (t) => {
     assert.equal(r.stderr, USAGE_LINE);
   }
 });
+
+test('works when .deepseek-coder is gitignored', (t) => {
+  const dir = makeRepo(t);
+  put(dir, '.gitignore', '.deepseek-coder/\n');
+  put(dir, 'a.txt', '1\n');
+  commitAll(dir);
+
+  const snap = runStepDiff(dir, 'snap', R, 'step-01');
+  assert.equal(snap.status, 0);
+  assert.equal(snap.stderr, '');
+  assert.equal(fs.existsSync(snapFile(dir, 'step-01')), true);
+
+  put(dir, 'a.txt', '1\n2\n');
+  put(dir, 'b.txt', 'x\n');
+  put(dir, '.deepseek-coder/plans/r/note.md', 'note\n');
+
+  const stat = runStepDiff(dir, 'stat', R, '01');
+  assert.equal(stat.status, 0);
+  assert.equal(stat.stdout, ['Step 01 changed 2 files:', '  M a.txt   +1 -0', '  A b.txt   +1 -0', ''].join('\n'));
+
+  const diff = runStepDiff(dir, 'diff', R, 'step-01');
+  assert.equal(diff.status, 0);
+  assert.match(diff.stdout, /b\.txt/);
+  assert.doesNotMatch(diff.stdout, /note\.md/);
+});
+
+test('a failed snapshot warns on stderr and exits 0', (t) => {
+  const dir = makeRepo(t);
+  put(dir, 'a.txt', '1\n');
+  commitAll(dir);
+  put(dir, R, 'not a folder\n');
+
+  const snap = runStepDiff(dir, 'snap', R, 'step-01');
+  assert.equal(snap.status, 0);
+  assert.equal(snap.stdout, '');
+  assert.match(snap.stderr, /^step-diff: snapshot step-01 failed: .+\n$/);
+});

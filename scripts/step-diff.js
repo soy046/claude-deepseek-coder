@@ -52,7 +52,10 @@ function writeTree(indexFile) {
       hasHead = false;
     }
     git(hasHead ? ['read-tree', 'HEAD'] : ['read-tree', '--empty'], env);
-    git(['add', '-A', ...PATHSPEC], env);
+    // An exclude pathspec that names a gitignored path makes git add exit 1, so add the plugin folder, then drop it.
+    // -f is needed because git add also stages the private index file inside the run folder.
+    git(['add', '-A', '--', '.'], env);
+    git(['rm', '-r', '-q', '-f', '--cached', '--ignore-unmatch', '--', '.deepseek-coder'], env);
     return git(['write-tree'], env).trim();
   } finally {
     fs.rmSync(index, { force: true });
@@ -164,8 +167,10 @@ function takeSnapshot(runFolder, name) {
     fs.mkdirSync(runFolder, { recursive: true });
     const tree = writeTree(path.join(runFolder, '.snap-index'));
     fs.writeFileSync(snapFile, tree + '\n');
-  } catch {
+  } catch (err) {
     // A snapshot must never fail the delegation run.
+    const msg = String(err && err.message ? err.message : err).split(/\r?\n/)[0];
+    process.stderr.write(`step-diff: snapshot ${name} failed: ${msg}\n`);
   }
 }
 

@@ -162,14 +162,14 @@ g. **Show the changes.** Once the step passes review, write a message to the use
    - Not a git repo: show the list of files DeepSeek reports changing, one per line, with no code.
 
 h. **Accept.**
-   - `commit`: `git add -A -- . ":(exclude).deepseek-coder/plans/.run-active"`, then commit with a Conventional Commits message (`<type>(<scope>): <summary>`, optional body),
+   - `commit`: `git add -A -- .`, then `git rm -r -q --cached --ignore-unmatch -- .deepseek-coder/plans/.run-active`, then commit with a Conventional Commits message (`<type>(<scope>): <summary>`, optional body),
      ending with exactly these trailers, where `<model>` is the `MODEL` line from the coder output:
 
      ```
      Co-Authored-By: Claude <noreply@anthropic.com>
      Co-Authored-By: DeepSeek <model> <noreply@deepseek.com>
      ```
-   - `stage`: `git add -A -- . ":(exclude).deepseek-coder/plans/.run-active"`.
+   - `stage`: `git add -A -- .`, then `git rm -r -q --cached --ignore-unmatch -- .deepseek-coder/plans/.run-active`.
    - `none`: nothing.
 
 ## 4. Finish
