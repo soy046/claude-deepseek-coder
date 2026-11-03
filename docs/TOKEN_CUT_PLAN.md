@@ -140,6 +140,77 @@ Both runs passed the same spot check as the delegated runs, with identical outpu
 
 **Finding:** on this task (about 130 added lines in 4 files), delegating on 0.2.1 cost the planner about 3× the output tokens (15.8k vs 5.3k), 1.9× the cache writes and 2.7× the cache reads of doing the work in Claude, plus about 0.15 CNY of DeepSeek and 4× the wall time. The delegated runs did write more tests (41 and 36 vs 29 and 30). So for a task this size, delegation has to cut Claude-side tokens by about two thirds just to break even. The after-PR 4 runs show how far PRs 2–4 close that gap, and PR 4's size threshold (about 30 lines in 1–2 files) may need to be higher.
 
+### Large-code experiment (set up 2026-11-03)
+
+The control shows that delegating a ~130-line task costs Claude about 3× the output tokens. This experiment tests the other end: a task where the coder writes a lot of code. Claude's output tokens grow with the code it writes itself, while the planner's cost under delegation should grow mainly with the spec and review. If delegation ever saves Claude tokens, it should be here.
+
+**Task:** build a small scripting language, Calc, in five steps: lexer, parser, interpreter with closures and built-ins, canonical pretty-printer, and CLI, each with its own test file. Expected size: about 1,200–1,500 added lines in 10 files. The goal spells out every AST shape, error message and output format, so results can be checked exactly. It is 842 words, against about 150 for the small benchmark.
+
+**Arms:** Claude alone (no plugin) and delegated on plugin 0.2.1, 2 runs each. That's the same plugin as the baseline, so the large and small results compare directly. On 0.2.1 Claude re-types each step's full diff (step 3g), so expect that to inflate the delegated output; PR 2 removes it. A 0.3.0 arm can be added once PR #5 is installed.
+
+**Folders:** `D:\projects\bench-large-0.2.1-run1`, `-run2`, `D:\projects\bench-large-claude-run1` and `-run2`, each a clean clone at `801ee27`, set up exactly like the small benchmark and the control (same config, plugin turned off in the Claude-only clones).
+
+**Prompts and checker:** in `D:\projects\bench-results\large\`:
+- `prompt-delegated.txt`: `/deepseek-coder:delegate` plus the goal.
+- `prompt-claude.txt`: the goal plus the same "Work like this" paragraph as the control, with "five steps".
+- `spotcheck.js`: 94 fixed checks of the public API (lexer 10, parser 21, interpreter 39, printer 16, CLI 8). Run `node D:\projects\bench-results\large\spotcheck.js <run folder>` after each run. It replaces the manual spot check, since the runs' own test suites will differ. Its expected values are hand-derived from the goal, so check any failure in the first run against the goal text before counting it.
+
+**How each run is driven:** as before. Open a new session in the run folder with Opus 5.5 medium, paste the prompt file's contents, and pick the recommended option for every planner question. Record the questions. Afterwards, run `usage.js` and `usage.js claude` (delegated), or write a `run.json` and run `usage.js claude` (Claude-only, as in the control). Then copy the transcript to `D:\projects\bench-results\large\<arm>-run<N>\`.
+
+**Also record:** added lines (`git diff --shortstat 801ee27..HEAD -- src bin test` in the run folder), spot-check score, DeepSeek turns per step (watch for steps hitting `maxTurns` 30), and whether any step's context had to be compacted.
+
+**Success:** the question is whether delegated Claude output tokens fall below the Claude-only arm's, and by how much. Use the spread rule from the baseline: differences smaller than about 20% are noise.
+
+| Run | Claude msgs | Claude output | Claude cache write | Claude cache read | DeepSeek input / cache read / output | DeepSeek turns | Est. DeepSeek cost | Fix rounds | Added lines | Spot check | Own tests | Wall time |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bench-large-claude-run1 | 22 | 35,816 | 63,375 | 1,952,214 | n/a | n/a | n/a | n/a | 1,438 | 94/94 | 81/81 pass | 6.4 min |
+| bench-large-claude-run2 | 19 | 33,271 | 62,365 | 1,657,772 | n/a | n/a | n/a | n/a | 1,460 | 94/94 | 76/76 pass | 5.7 min |
+| **Claude-only average** | 21 | 34,544 | 62,870 | 1,804,993 | n/a | n/a | n/a | n/a | 1,449 | 94/94 | pass | 6.1 min |
+| bench-large-0.2.1-run1 | 37 | 66,688 | 135,463 | 4,566,983 | 113,824 / 952,832 / 48,359 | 60 | 0.6526 CNY | 0 | 2,159 | 94/94 | 104/104 pass | 71 min |
+| bench-large-0.2.1-run2 | 43 | 47,129 | 114,959 | 5,058,689 | 107,226 / 897,280 / 46,025 | 53 | 0.6185 CNY | 0 | 2,249 | 94/94 | 112/112 pass | 16 min |
+| **Delegated average (0.2.1)** | 40 | 56,909 | 125,211 | 4,812,836 | 110,525 / 925,056 / 47,192 | 57 | 0.6356 CNY | 0 | 2,204 | 94/94 | pass | 16–71 min |
+
+Wall time is first to last transcript entry, including time spent answering questions. Transcripts and `run.json` files are in `D:\projects\bench-results\large\claude-run1` and `claude-run2`.
+
+**Claude-only results (2026-11-03).** Both runs made five commits, passed their own tests and scored 94/94 on the spot check. Two independent implementations matching every hand-derived expected value also confirms the checker. Run-to-run spread was small: output differed by 7%.
+
+Both runs asked 4 questions, nearly the same set (the recommended option was picked each time; use the same answers in the delegated runs):
+- Errors for len/push on the wrong type: type-error style messages.
+- String escapes other than `\"`, `\\`, `\n`: an error at the backslash.
+- User code can shadow built-ins (built-ins live in an outer scope); parameters share the function body's scope.
+- Run 1 only: the right operand of `^` may be unary, so `2 ^ -1` is `2^(-1)`.
+- Run 2 only: when a CLI run fails partway, lines already printed still go to stdout.
+
+**Where Claude's output goes.** In both runs the files Claude wrote come to about 46,000 characters, roughly 13–15k tokens, so code is about 40% of Claude's output. Tool commands and reply text add about 2–3k tokens, and the rest (about 17–19k) is most likely thinking, which the transcript doesn't show in full. Compared with the small control (5,330 output tokens for about 130 lines), this task wrote 11× the lines for 6.5× the output tokens.
+
+**What this means for the delegated runs.** Delegation can save at most the ~14k tokens of code plus the implementation part of the thinking. On 0.2.1 the planner re-types each step's full diff, about as many characters as the code itself, which may cancel most of that saving. If the 0.2.1 runs come out at or above ~35k output tokens, that doesn't show delegation can't pay off on large tasks. It shows that step 3g has to go first, and a 0.3.0 arm would settle it.
+
+**Delegated run 1 results (2026-11-03).** Five steps, no fix rounds, 104/104 own tests and 94/94 on the spot check, so quality matched the Claude-only runs. DeepSeek wrote 2,159 lines, about 50% more than Claude did, mostly extra tests. Claude's output was 66,688 tokens, **1.9× the Claude-only average** (34,544): 13,134 before the run marker (planning) and 53,554 after it. Cache writes were 2.2× and cache reads 2.5×. The 71 minutes of wall time include answering 12 questions, 4 of them asked mid-run.
+
+Where the output went, in characters from the transcript (thinking is not visible, so it is the remainder):
+
+| Part | Characters | Rough tokens |
+|---|---|---|
+| Step 3g diff re-typing (5 reply blocks, 2,209 diff lines) | 60,700 | 17–19k |
+| Specs written for DeepSeek (`step-01.md`–`step-05.md`) | 28,400 | 8–9k |
+| Plan, questions (12), short replies, Skill and shell calls | about 35,000 | 9–10k |
+| Thinking and other text (remainder) | n/a | about 30k |
+
+DeepSeek: 60 turns over 5 coder runs, and step 2 took 24 of its 30 allowed turns. Estimated cost 0.65 CNY, about 4× the small baseline.
+
+**Delegated run 2 results (2026-11-03).** Also five steps, no fix rounds, 112/112 own tests and 94/94 on the spot check. Claude's output was 47,129 tokens (11,312 planning, 35,817 after the run marker), 1.4× the Claude-only average and 29% below run 1. Wall time was 16 minutes, so most of run 1's 71 minutes was probably time waiting for answers. It again asked 12 questions (10 before the run, 2 during review), and the specs were about the same size (30,900 characters for 56,900 characters of code). DeepSeek took 53 turns, at most 14 in one step, for 0.62 CNY.
+
+Most of the gap between the runs is step 3g. Run 2 re-typed the full diff for step 1 (11,300 characters), gave an abbreviated diff for step 2 (2,300 characters, with function bodies replaced by `...`), and for steps 3–5 only said "committed as `<hash>`". In all, its reply text during the run was 18,300 characters, against 64,700 in run 1. It still reviewed every step (read the diffs and test files, fuzzed the printer), so the review was not lighter. The planner follows step 3g inconsistently, so on 0.2.1 the run-to-run spread for large tasks (34% in Claude output) is larger than the baseline's 20%.
+
+**Findings (both delegated runs):**
+- On this ~1,450-line task, delegating on 0.2.1 cost the planner **1.65× the output tokens** of doing it in Claude (56.9k vs 34.5k), 2.0× the cache writes and 2.7× the cache reads, plus about 0.64 CNY of DeepSeek. Code quality was the same (94/94 in all four runs), and the delegated runs wrote more tests (104–112 vs 76–81). On the small task the ratio was 3×, so delegation's relative cost falls as the task grows, but it never broke even here.
+- Re-typing diffs is the largest cost you can see, and it varies: about 18k tokens in run 1 and about 4k in run 2. PR 2 (`showDiff: stat`) removes it and should also remove most of the run-to-run spread.
+- Without re-typed diffs, the two runs would be at about 48k and 43k: roughly 25–40% above Claude alone. What's left is mostly specs (about 9k tokens per run, half the size of the code they produce), plus planning and review thinking and 12 questions per run against 4. On a task this tightly specified, the spec is nearly the code.
+- So PR 2 alone won't make delegation pay off on this task. That also needs shorter specs (point to the goal instead of restating it), fewer questions (only ones the goal really leaves open), and lighter review (no fuzzing the planner made up, which both runs did in step 4).
+- Next: a 0.3.0 arm (2 runs) to measure PR 2 directly. A task with a short goal and a lot of code (such as "port this module" or "add CRUD endpoints for these 8 models"), where the spec can't be nearly the code, would test where delegation does pay off.
+
+Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0.2.1-run2`.
+
 ## PR 3: short test output and smaller fix rounds (0.4.0)
 
 **New `scripts/run-check.js --log <file> "<cmd>"`**
