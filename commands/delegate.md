@@ -105,15 +105,12 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 ## 3. For each step NN (01, 02, ...)
 
-a. **Stubs, tests and spec.** First write this step's interfaces and acceptance tests as real files:
+a. **Stubs and spec.** First write this step's interfaces as stub files:
    - Register every file you will write with marker `allow <path>...` before writing it; the edit guard blocks the rest.
    - **Stubs:** every new or changed function, class, method, route or type, with its exact signature, types and doc
      comment, and a body that throws `not implemented`. Put them where the code belongs, in new or existing files.
      A step with no new interface (docs, config) has no stubs.
-   - **Tests:** if `allowedCommands` has a command that runs tests, write the step's acceptance tests as test files
-     that its verify command runs; they fail until DeepSeek fills in the stubs. Without such a command, write no tests
-     and keep the acceptance criteria in prose.
-   - Write nothing else in source files: the bodies are DeepSeek's work.
+   - Write nothing else in source files, and no tests: the bodies and the tests are DeepSeek's work.
 
    Then write `<run folder>/step-NN.md`:
 
@@ -122,17 +119,16 @@ a. **Stubs, tests and spec.** First write this step's interfaces and acceptance 
 ## Goal
 ## Files to create or change
 ## Stub files (written by the planner; fill in the bodies)
-## Test files (written by the planner; do not change them)
-## Acceptance criteria (only what the tests don't cover; all of them when there are no test files)
+## Acceptance criteria
 ## Constraints (style, libraries to use or avoid)
 ## Verify with (only commands from allowedCommands)
 ## Out of scope
 ```
 
-   "Files to create or change" lists every file DeepSeek edits, stub files included. Test files appear only under
-   "Test files", and "Out of scope" names them too. A section with nothing in it says `None`. A step that resumes the
-   previous step's session may say "same conventions as step NN-1" and refer to earlier steps' files and interfaces
-   instead of restating them; a step in a new session restates everything it needs.
+   "Files to create or change" lists every file DeepSeek edits, stub files and test files included. A section with
+   nothing in it says `None`. A step that resumes the previous step's session may say "same conventions as step
+   NN-1" and refer to earlier steps' files and interfaces instead of restating them; a step in a new session restates
+   everything it needs.
 
    Then run the implement-ready check (planning skill, section 4).
 
@@ -155,10 +151,8 @@ e. **Review.** Review the diff, not whole files, and read DeepSeek's test result
      step changed since the snapshot taken before its first coder run. Note the names of the tests it added.
    - Not a git repo: read every file the coder reports changing.
    - Open a file, or part of one, only to settle a specific question the diff raises.
-   - Check every acceptance criterion against the diff. Do not write fuzzers or scratch scripts. If test coverage
-     looks thin, write the missing tests yourself as in (a) and list them in the fix spec's "Test files" section.
-   - **Your test files.** If the step changed any file listed under "Test files" (in the step-diff, or in the files
-     the coder reports changing), the step fails; go to (f).
+   - Check every acceptance criterion against the diff. Do not write extra tests, fuzzers or scratch scripts. If test
+     coverage looks thin, say so in a fix spec and let DeepSeek add the tests.
    - **Tests.** Compare the `VERIFY` lines at the end of DeepSeek's report with the spec's "Verify with" commands:
      - Every command has a line with exit 0: the tests pass. Do not run them yourself.
      - Any line has a non-zero exit: the step fails. Go to (f) and write the fix spec straight away, without
@@ -173,12 +167,10 @@ f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): 
    # Step NN fix K
    ## Problems (file, line or function, expected vs actual)
    ## Changes needed
-   ## Test files (written by the planner; do not change them)
    ## Verify with
    ```
 
-   List only the problems and the changes needed. When a test is missing or wrong, write or correct it yourself as in
-   (a) and list it under "Test files"; otherwise that section says `None`. Never restate the original spec: DeepSeek still has it in its
+   List only the problems and the changes needed. Never restate the original spec: DeepSeek still has it in its
    resumed session. If a problem needs a decision the plan does not cover, ask the user first (planning skill,
    section 6). Run the implement-ready check, and in `step` mode review the fix spec with the user as in (b). Then run
    the coder with that spec, the resume option set to the `SESSION_ID` from the latest output, and the turn option set
@@ -270,7 +262,7 @@ edit files.
 
 ## Rules
 
-- Never edit source files yourself during a run. Only the run folder, `.deepseek-coder/config.json`, and the stub and
-  test files you register with marker `allow` (3a) are yours.
+- Never edit source files yourself during a run. Only the run folder, `.deepseek-coder/config.json`, and the stub
+  files you register with marker `allow` (3a) are yours.
 - Never delete run folders or spec files.
 - Never write the API key into a file or a command.

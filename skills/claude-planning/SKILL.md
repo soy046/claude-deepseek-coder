@@ -81,8 +81,6 @@ fix the spec, or ask the user if the fix needs a decision.
 - Every file to create or change is named by its exact path.
 - Every interface is in a stub file on disk with its full signature: name, parameters, types, return value,
   errors, and a body that throws `not implemented`.
-- When `allowedCommands` has a test command, every acceptance criterion a test can check is a test in a file
-  listed under "Test files"; only the rest stay in prose.
 - Every behaviour, edge case and error case decided in `plan.md` that belongs to this step is in the spec.
 - Every acceptance criterion can be checked by reading the diff or running a verify command.
 - Every verify command is in `allowedCommands`.
@@ -113,6 +111,5 @@ modes. Sections 1-4 still apply in every mode.
   choose the fix yourself. Ask the user, record the answer in `plan.md`, then write the fix spec.
 - **A fix spec** lists each problem concretely (file, line or function, expected vs actual) and the change
   needed. It goes through the same check (section 4) and, in `step` mode, the same review (section 5).
-  Missing or wrong tests are written by the planner, not DeepSeek, and listed under "Test files".
 - **The user changes their mind mid-run:** update `plan.md`, tell the user which accepted steps the change
   affects, and ask how to handle them before writing the next spec.
