@@ -23,7 +23,8 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 4 | Size check before delegating small tasks | 0.5.0 | Merged (#7); one large-benchmark run done (see Results) |
 | 5 | Model names and the planner model | none (docs only) | Built 2026-11-04, branch `docs/model-names` |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03); skipped for now (2026-11-04), PR 7 goes first |
-| 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Built 2026-11-04 on `feat/shorter-specs` (run `2026-11-04-1724-shorter-specs`) |
+| 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Merged (#10); one large-benchmark run done (see Results) |
+| 7b | Stubs only: the planner writes no tests | 0.6.1 | Built 2026-11-04 on `feat/stubs-only` |
 
 ## Decisions
 
@@ -174,6 +175,7 @@ The control shows that delegating a ~130-line task costs Claude about 3× the ou
 | bench-large-0.2.1-run2 | 43 | 47,129 | 114,959 | 5,058,689 | 107,226 / 897,280 / 46,025 | 53 | 0.6185 CNY | 0 | 2,249 | 94/94 | 112/112 pass | 16 min |
 | **Delegated average (0.2.1)** | 40 | 56,909 | 125,211 | 4,812,836 | 110,525 / 925,056 / 47,192 | 57 | 0.6356 CNY | 0 | 2,204 | 94/94 | pass | 16–71 min |
 | bench-large-0.5.0-run1 | 45 | 36,086 | 99,087 | 5,027,209 | 109,346 / 824,576 / 52,758 | 51 | 0.6737 CNY | 0 | 2,196 | 94/94 | 103/103 pass | 10.3 min |
+| bench-large-0.6.0-run1 | 43 | 57,395 | 124,275 | 5,519,143 | 105,448 / 512,128 / 25,747 | 30 replies, 33 tool calls | 0.4374 CNY | 0 | 1,995 | 94/94 | 85/85 pass | 13.7 min |
 
 Wall time is first to last transcript entry, including time spent answering questions. Transcripts and `run.json` files are in `D:\projects\bench-results\large\claude-run1` and `claude-run2`.
 
@@ -227,6 +229,18 @@ Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0
 It is a single run, and the large 0.2.1 runs spread by 34%, so read the 37% drop as likely real but not yet measured. Even so, on this tightly specified task delegation now breaks even with Claude alone on output tokens, where 0.2.1 cost 1.65× as much. The post-PR 6 benchmark (`reviewModel` unset arm, 2 runs) gives the proper measurement.
 
 Transcript and run folder: `D:\projects\bench-results\large\0.5.0-run1`.
+
+**Delegated run on 0.6.0 (2026-11-04).** One run with PR 7 in (A: planner-written stubs and tests; B: resume; D: scaled turns), set up like the 0.5.0 run, plus allow rules for `run-marker.js` in `.claude/settings.json`. Five steps, no fix rounds, no compaction, 85/85 own tests and 94/94 on the spot check. Claude's output was 57,395 tokens (10,681 planning, 46,714 after the run marker): **59% above the 0.5.0 run** and 1.66× the Claude-only average. DeepSeek's output halved (25,747 against 52,758) and its cost fell to 0.44 CNY.
+
+- **Idea A moved test writing from DeepSeek to Claude.** After the run marker, Claude wrote 33,500 characters of test files (about 9–10k tokens) and 5,600 of stubs. Specs fell only to 21,000 characters (24,900 on 0.5.0), so the stubs saved about as much spec text as they added. The rest of the increase, about 8–9k tokens, is most likely thinking about the tests and stubs.
+- `run-marker.js allow` ran before each step with no guard blocks and no permission prompts.
+- **B never triggered:** each step touched its own files, so all five started a new session.
+- **D:** turn limits of 10, 21, 21, 13 and 10; the most any step used was 9 replies. No `error_max_turns`.
+- 12 planner questions (6 before the run, 6 at the step specs), all answered with the recommended option. Wall time 13.7 minutes.
+
+It is a single run, but +59% is well beyond the 34% spread, and its cause is visible in the transcript. **Decision (2026-11-04):** keep the stubs, drop the planner-written tests (PR 7b, 0.6.1): DeepSeek writes the tests against prose acceptance criteria, as on 0.5.0. Run 2 on 0.6.0 is skipped; one run on 0.6.1 (`D:\projects\bench-large-0.6.1-run1`) replaces it.
+
+Transcript and run folder: `D:\projects\bench-results\large\0.6.0-run1`.
 
 ## PR 3: short test output, diff-only review and smaller fix rounds (0.4.0)
 
@@ -367,6 +381,10 @@ PR 6 is skipped for now; PR 7 goes first. A, B and D go in one PR with one bump,
 - **Measure:** two large-benchmark runs on 0.6.0 (`bench-large-0.6.0-run1`, `-run2`), against `bench-large-0.5.0-run1`, 0.2.1 and Claude alone.
 - **Build:** a delegation run, stacked on PR #9.
 - **Turn counting (found and decided 2026-11-04, built by Claude directly):** `--max-turns` limits DeepSeek's replies, not tool calls. A low-cap test (six parallel Reads, then a Write) finished in 3 replies at cap 3, and stopped with `error_max_turns` after 2 replies at cap 2. A log's `num_turns` is tool calls + 1 on success and the cap + 1 on `error_max_turns`, so step 04 of the PR 7 run showed 63 under a cap of 30 (15 replies, 62 tool calls). print-result now counts replies and tool calls from the coder's session transcript, since the runner's start time, and prints `TURNS: <replies> replies (cap <N>), <tool calls> tool calls`. `usage.jsonl` keeps `turns` and adds `replies` and `toolCalls`; the usage table has `replies` and `tool calls` columns (old records `?`, totals `<sum>+?`).
+
+## PR 7b: stubs only (0.6.1, decided 2026-11-04)
+
+After the 0.6.0 large run, the planner keeps writing interface stubs (registered with `run-marker.js allow`) but writes no tests. The spec template drops the Test files section and the acceptance criteria are all prose again; DeepSeek writes the tests, the review again says "let DeepSeek add the tests" when coverage is thin, and fix specs go back to three sections. B and D are unchanged. Built by Claude directly; measured by one large-benchmark run on 0.6.1.
 
 ## Lessons from PRs 1 and 2
 
