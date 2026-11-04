@@ -88,7 +88,7 @@ The first time you use it in a project, Claude proposes a `.deepseek-coder/confi
 |---|---|---|---|
 | `allowedCommands` | array of strings | `[]` | The only shell commands DeepSeek may run. Prefix match: `"npm test"` also allows `npm test -- --watch=false`. |
 | `model` | DeepSeek model name | `deepseek-flash[1m]` | Model the coder uses. |
-| `maxTurns` | positive integer | `60` | Upper limit on turns per coder run. Claude gives each run its own limit from the size of its spec: about 1 turn per 12 changed lines, at least 10, capped at this value. |
+| `maxTurns` | positive integer | `60` | Upper limit on DeepSeek replies per coder run; one reply can make several tool calls. Claude gives each run its own limit from the size of its spec: about 1 turn per 12 changed lines, at least 10, capped at this value. |
 | `extraInstructions` | string | `""` | Project rules appended to the coder's system prompt. |
 | `approvalMode` | `step` / `plan` / `auto` | `step` | `step`: you review and approve every spec, fix specs included, before DeepSeek gets it. `plan`: you approve the step list once. `auto`: no stops. |
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |

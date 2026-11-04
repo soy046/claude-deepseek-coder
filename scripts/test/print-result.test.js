@@ -33,8 +33,22 @@ function copyLog(runDir, fixtureName, name) {
   return dest;
 }
 
-function run(dir, logPath) {
-  return spawnSync(process.execPath, [SCRIPT, logPath, MODEL], { encoding: 'utf8', cwd: dir });
+// CLAUDE_CONFIG_DIR points at a folder inside the temp project, so the real ~/.claude transcripts are never read.
+function run(dir, logPath, extra = []) {
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(dir, 'claude-config') };
+  return spawnSync(process.execPath, [SCRIPT, logPath, MODEL, ...extra], { encoding: 'utf8', cwd: dir, env });
+}
+
+// Writes a coder transcript for `sessionId` under the temp project's CLAUDE_CONFIG_DIR.
+function writeTranscript(dir, sessionId, lines) {
+  const folder = path.join(dir, 'claude-config', 'projects', 'D--some-project');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, `${sessionId}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+}
+
+function reply(id, timestamp, tools) {
+  const content = [{ type: 'text', text: 'x' }, ...tools.map((t) => ({ type: 'tool_use', id: t, name: 'Read', input: {} }))];
+  return { type: 'assistant', timestamp, message: { id, content } };
 }
 
 function usageLines(runDir) {
@@ -51,7 +65,7 @@ function summary(logPath, costLine) {
     '',
     'SESSION_ID: 8933c48e-3848-4887-94d1-698f355c9083',
     `MODEL: ${MODEL}`,
-    'TURNS: 23   STATUS: success   ERROR: false',
+    'TURNS: ? replies, ? tool calls   STATUS: success   ERROR: false',
     'USAGE: input 29,924 (cache read 408,960, cache write 0)  output 17,010',
     ...(costLine ? [costLine] : []),
     `LOG: ${logPath}`,
@@ -90,6 +104,8 @@ test('appends one usage.jsonl line with the expected keys and values', (t) => {
     'spec',
     'sessionId',
     'turns',
+    'replies',
+    'toolCalls',
     'status',
     'error',
     'input',
@@ -100,6 +116,8 @@ test('appends one usage.jsonl line with the expected keys and values', (t) => {
   assert.equal(entry.spec, 'step-01.md');
   assert.equal(entry.sessionId, '8933c48e-3848-4887-94d1-698f355c9083');
   assert.equal(entry.turns, 23);
+  assert.equal(entry.replies, null);
+  assert.equal(entry.toolCalls, null);
   assert.equal(entry.status, 'success');
   assert.equal(entry.error, false);
   assert.equal(entry.input, 29924);
@@ -136,7 +154,7 @@ test('a failed run still prints usage and records it', (t) => {
 
   const r = run(dir, log);
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /^TURNS: 23   STATUS: error_max_turns   ERROR: true$/m);
+  assert.match(r.stdout, /^TURNS: \? replies, \? tool calls   STATUS: error_max_turns   ERROR: true$/m);
   assert.match(r.stdout, /^USAGE: input 29,924 \(cache read 408,960, cache write 0\)  output 17,010$/m);
 
   const [entry] = usageLines(runDir);
@@ -174,4 +192,45 @@ test('invalid pricing prints no cost line', (t) => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /^USAGE: input 29,924/m);
   assert.doesNotMatch(r.stdout, /EST\. DEEPSEEK COST/);
+});
+
+test('counts replies and tool calls since the run start, with the cap', (t) => {
+  const { dir, runDir } = makeProject(t, { deepseekPricing: null });
+  const log = copyLog(runDir, 'coder-step-01.json', 'step-01.json');
+  writeTranscript(dir, '8933c48e-3848-4887-94d1-698f355c9083', [
+    { type: 'user', timestamp: '2026-11-04T10:00:00.000Z', message: { content: 'spec' } },
+    reply('m1', '2026-11-04T09:00:00.000Z', ['old1']),
+    reply('m2', '2026-11-04T10:00:01.000Z', ['a', 'b', 'c']),
+    reply('m2', '2026-11-04T10:00:01.500Z', ['d']),
+    reply('m3', '2026-11-04T10:00:02.000Z', []),
+  ]);
+
+  const r = run(dir, log, ['--since', '2026-11-04T10:00:00.000Z', '--cap', '30']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^TURNS: 2 replies \(cap 30\), 4 tool calls   STATUS: success   ERROR: false$/m);
+  const [entry] = usageLines(runDir);
+  assert.equal(entry.replies, 2);
+  assert.equal(entry.toolCalls, 4);
+  assert.equal(entry.turns, 23);
+});
+
+test('without --since the whole transcript counts, and an invalid --cap is not shown', (t) => {
+  const { dir, runDir } = makeProject(t, { deepseekPricing: null });
+  const log = copyLog(runDir, 'coder-step-01.json', 'step-01.json');
+  writeTranscript(dir, '8933c48e-3848-4887-94d1-698f355c9083', [
+    reply('m1', '2026-11-04T09:00:00.000Z', ['x']),
+    reply('m2', '2026-11-04T10:00:01.000Z', ['y']),
+  ]);
+
+  const r = run(dir, log, ['--cap', '0']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^TURNS: 2 replies, 2 tool calls   STATUS: success   ERROR: false$/m);
+});
+
+test('shows the cap with unknown counts when no transcript is found', (t) => {
+  const { dir, runDir } = makeProject(t, { deepseekPricing: null });
+  const log = copyLog(runDir, 'coder-step-01.json', 'step-01.json');
+  const r = run(dir, log, ['--since', '2026-11-04T10:00:00.000Z', '--cap', '25']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /^TURNS: \? replies \(cap 25\), \? tool calls   STATUS: success   ERROR: false$/m);
 });

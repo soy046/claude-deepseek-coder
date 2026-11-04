@@ -6,15 +6,25 @@
 // Usage (run from the project root):
 //   node usage.js <run folder>   table of every coder run recorded in <run folder>/usage.jsonl
 //   node usage.js claude <run folder>   the planner's Claude tokens from the session transcript (best-effort)
+//
+// The turn limit (--max-turns) counts DeepSeek replies, and one reply can hold several tool calls. A coder log's
+// num_turns is neither (tool calls + 1 on success, the limit + 1 on error_max_turns), so coderReplies() counts both
+// from the coder's own session transcript instead.
 
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
 // A missing or non-finite number counts as 0.
 function num(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+// A count that may be unknown: a non-negative integer, or null.
+function countOrNull(value) {
+  return Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 // Reads one coder log's `usage` block (a single run, all its turns).
@@ -72,6 +82,8 @@ function readUsageLog(runDir) {
       spec: v.spec,
       sessionId: v.sessionId,
       turns: num(v.turns),
+      replies: countOrNull(v.replies),
+      toolCalls: countOrNull(v.toolCalls),
       status: v.status,
       error: v.error,
       input: num(v.input),
@@ -85,7 +97,8 @@ function readUsageLog(runDir) {
 
 const COLUMNS = [
   { key: 'spec', header: 'spec', right: false },
-  { key: 'turns', header: 'turns', right: true },
+  { key: 'replies', header: 'replies', right: true },
+  { key: 'toolCalls', header: 'tool calls', right: true },
   { key: 'input', header: 'input', right: true },
   { key: 'cacheRead', header: 'cache read', right: true },
   { key: 'cacheWrite', header: 'cache write', right: true },
@@ -95,6 +108,14 @@ const COLUMNS = [
 
 function cell(value) {
   return typeof value === 'number' ? value.toLocaleString('en-US') : String(value ?? '');
+}
+
+// Sum of counts that may be unknown: the plain sum, `<sum>+?` when some are unknown, `?` when all are.
+function knownSum(values) {
+  const known = values.filter((v) => v !== null);
+  if (!known.length) return '?';
+  const sum = known.reduce((a, b) => a + b, 0);
+  return known.length === values.length ? sum : `${sum.toLocaleString('en-US')}+?`;
 }
 
 function buildLine(columns, values, widths, indent) {
@@ -124,16 +145,16 @@ function report(runDir) {
   const { entries, skipped } = readUsageLog(runDir);
   if (!entries.length) return `no usage recorded in ${runDir}\n`;
 
-  const totals = { turns: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  const totals = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
   const rows = entries.map((e) => {
-    totals.turns += e.turns;
     totals.input += e.input;
     totals.cacheRead += e.cacheRead;
     totals.cacheWrite += e.cacheWrite;
     totals.output += e.output;
     return [
       e.spec ? String(e.spec) : '?',
-      e.turns,
+      e.replies ?? '?',
+      e.toolCalls ?? '?',
       e.input,
       e.cacheRead,
       e.cacheWrite,
@@ -141,7 +162,16 @@ function report(runDir) {
       e.status ? String(e.status) : '?',
     ];
   });
-  const totalRow = ['total', totals.turns, totals.input, totals.cacheRead, totals.cacheWrite, totals.output, ''];
+  const totalRow = [
+    'total',
+    knownSum(entries.map((e) => e.replies)),
+    knownSum(entries.map((e) => e.toolCalls)),
+    totals.input,
+    totals.cacheRead,
+    totals.cacheWrite,
+    totals.output,
+    '',
+  ];
 
   const widths = COLUMNS.map((col, i) =>
     Math.max(col.header.length, ...rows.map((r) => cell(r[i]).length), cell(totalRow[i]).length)
@@ -176,6 +206,61 @@ function transcriptFiles(transcriptPath) {
     files.push(path.join(subagents, name));
   }
   return files;
+}
+
+// Claude Code's config folder, where session transcripts live under projects/<project folder>/<session id>.jsonl.
+function claudeConfigDir() {
+  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+}
+
+// DeepSeek replies and tool calls in one coder run, from its session transcript (best-effort).
+// --resume reuses the session id, so only assistant messages at or after `since` (an ISO time) count; without a
+// valid `since`, the whole transcript counts. Returns { replies, toolCalls }, or null when no transcript is found.
+function coderReplies(sessionId, since, configDir = claudeConfigDir()) {
+  if (!nonEmptyString(sessionId) || !/^[A-Za-z0-9-]+$/.test(sessionId)) return null;
+  let file = null;
+  try {
+    const projects = path.join(configDir, 'projects');
+    for (const d of fs.readdirSync(projects)) {
+      const f = path.join(projects, d, `${sessionId}.jsonl`);
+      if (fs.existsSync(f)) {
+        file = f;
+        break;
+      }
+    }
+  } catch {
+    return null;
+  }
+  if (!file) return null;
+
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const sinceMs = nonEmptyString(since) ? Date.parse(since) : NaN;
+  const replies = new Set();
+  const toolCalls = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let v;
+    try {
+      v = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!v || v.type !== 'assistant' || !v.message || typeof v.message !== 'object') continue;
+    if (Number.isFinite(sinceMs) && !(Date.parse(v.timestamp) >= sinceMs)) continue;
+    const id = nonEmptyString(v.message.id) ? v.message.id : nonEmptyString(v.uuid) ? v.uuid : null;
+    if (!id) continue;
+    replies.add(id);
+    const content = Array.isArray(v.message.content) ? v.message.content : [];
+    content.forEach((c, i) => {
+      if (c && c.type === 'tool_use') toolCalls.add(nonEmptyString(c.id) ? c.id : `${id}:${i}`);
+    });
+  }
+  return { replies: replies.size, toolCalls: toolCalls.size };
 }
 
 function nonEmptyString(value) {
@@ -316,4 +401,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { fromResult, format, cost, formatCost, readUsageLog, readPricing, claudeUsage, claudeReport };
+module.exports = { fromResult, format, cost, formatCost, readUsageLog, readPricing, claudeUsage, claudeReport, coderReplies };

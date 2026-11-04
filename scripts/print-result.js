@@ -1,15 +1,26 @@
 #!/usr/bin/env node
 // Prints a coder run's JSON log (claude -p --output-format json) as the summary the planner reads.
-// Usage: node print-result.js <log.json> <model>
+// Usage: node print-result.js <log.json> <model> [--since <ISO time>] [--cap <N>]
+//   --since: when this coder run started; counts only its own replies in a resumed session's transcript.
+//   --cap: the run's turn limit, shown next to the reply count.
 // Also prints the run's token usage and appends it to usage.jsonl next to the log (read by usage.js).
 // Exits 1 when the run failed or the log is not valid JSON.
 
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { fromResult, format, cost, formatCost, readPricing } = require('./usage');
+const { fromResult, format, cost, formatCost, readPricing, coderReplies } = require('./usage');
 
-const [logPath, model] = process.argv.slice(2);
+const [logPath, model, ...rest] = process.argv.slice(2);
+let since = null;
+let cap = null;
+for (let i = 0; i < rest.length; i++) {
+  if (rest[i] === '--since') since = rest[++i] ?? null;
+  else if (rest[i] === '--cap') {
+    const v = rest[++i] ?? '';
+    cap = /^[1-9][0-9]*$/.test(v) ? Number(v) : null;
+  }
+}
 const raw = fs.readFileSync(logPath, 'utf8');
 
 let r;
@@ -23,13 +34,17 @@ try {
 const failed = r.is_error === true || (r.subtype && r.subtype !== 'success');
 const usage = fromResult(r);
 const pricing = readPricing();
+const counts = coderReplies(r.session_id, since);
+const replies = counts ? counts.replies : null;
+const toolCalls = counts ? counts.toolCalls : null;
+const show = (v) => (v === null ? '?' : String(v));
 process.stdout.write(
   [
     r.result ? String(r.result) : '(no result text returned)',
     '',
     `SESSION_ID: ${r.session_id ?? 'unknown'}`,
     `MODEL: ${model}`,
-    `TURNS: ${r.num_turns ?? '?'}   STATUS: ${r.subtype ?? 'unknown'}   ERROR: ${failed}`,
+    `TURNS: ${show(replies)} replies${cap ? ` (cap ${cap})` : ''}, ${show(toolCalls)} tool calls   STATUS: ${r.subtype ?? 'unknown'}   ERROR: ${failed}`,
     format(usage),
     ...(pricing ? [`EST. DEEPSEEK COST: ${formatCost(cost(usage, pricing), pricing.currency)}`] : []),
     `LOG: ${logPath}`,
@@ -43,6 +58,8 @@ try {
     spec: path.basename(logPath).replace(/\.json$/, '.md'),
     sessionId: r.session_id ?? null,
     turns: typeof r.num_turns === 'number' ? r.num_turns : 0,
+    replies,
+    toolCalls,
     status: r.subtype ?? 'unknown',
     error: failed,
     input: usage.input,

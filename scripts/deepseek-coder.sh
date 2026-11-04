@@ -96,11 +96,12 @@ LOG="${SPEC%.md}.json"
 node "$SCRIPTS/run-marker.js" touch
 # Snapshot the working tree before the coder runs, so this spec's changes can be diffed on their own
 node "$SCRIPTS/step-diff.js" snap "$(dirname "$SPEC")" "$(basename "$SPEC" .md)" || true
+STARTED_AT="$(node -e 'process.stdout.write(new Date().toISOString())')"
 set +e
 claude "${ARGS[@]}" < "$SPEC" > "$LOG"
 CLAUDE_EXIT=$?
 node "$SCRIPTS/run-marker.js" touch
-node "$SCRIPTS/print-result.js" "$LOG" "$MODEL"
+node "$SCRIPTS/print-result.js" "$LOG" "$MODEL" --since "$STARTED_AT" --cap "$MAX_TURNS"
 PRINT_EXIT=$?
 set -e
 

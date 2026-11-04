@@ -27,9 +27,9 @@ function makeRun(dir) {
   const runDir = path.join(dir, 'run');
   fs.mkdirSync(runDir, { recursive: true });
   const lines = [
-    { at: '2026-10-27T00:59:00Z', spec: 'step-01.md', sessionId: '8933c48e-3848-4887-94d1-698f355c9083', turns: 23, status: 'success', error: null, input: 29924, cacheRead: 408960, cacheWrite: 0, output: 17010 },
-    { at: '2026-10-27T00:59:00Z', spec: 'step-01-fix1.md', sessionId: '8933c48e-3848-4887-94d1-698f355c9083', turns: 5, status: 'success', error: null, input: 1164, cacheRead: 137856, cacheWrite: 0, output: 791 },
-    { at: '2026-10-27T01:01:00Z', spec: 'step-02.md', sessionId: '5dc82cb6-5a43-4f89-8a29-f38a9fc8b6d5', turns: 4, status: 'success', error: null, input: 14055, cacheRead: 40704, cacheWrite: 0, output: 488 },
+    { at: '2026-10-27T00:59:00Z', spec: 'step-01.md', sessionId: '8933c48e-3848-4887-94d1-698f355c9083', turns: 23, replies: 12, toolCalls: 22, status: 'success', error: null, input: 29924, cacheRead: 408960, cacheWrite: 0, output: 17010 },
+    { at: '2026-10-27T00:59:00Z', spec: 'step-01-fix1.md', sessionId: '8933c48e-3848-4887-94d1-698f355c9083', turns: 5, replies: 3, toolCalls: 4, status: 'success', error: null, input: 1164, cacheRead: 137856, cacheWrite: 0, output: 791 },
+    { at: '2026-10-27T01:01:00Z', spec: 'step-02.md', sessionId: '5dc82cb6-5a43-4f89-8a29-f38a9fc8b6d5', turns: 4, replies: 2, toolCalls: 3, status: 'success', error: null, input: 14055, cacheRead: 40704, cacheWrite: 0, output: 488 },
   ];
   fs.writeFileSync(path.join(runDir, 'usage.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
   return runDir;
@@ -45,11 +45,11 @@ function makeProject(config) {
 function table(runDir, cost) {
   return [
     `DeepSeek usage in ${runDir}:`,
-    '  spec             turns   input  cache read  cache write  output  status',
-    '  step-01.md          23  29,924     408,960            0  17,010  success',
-    '  step-01-fix1.md      5   1,164     137,856            0     791  success',
-    '  step-02.md           4  14,055      40,704            0     488  success',
-    '  total               32  45,143     587,520            0  18,289',
+    '  spec             replies  tool calls   input  cache read  cache write  output  status',
+    '  step-01.md            12          22  29,924     408,960            0  17,010  success',
+    '  step-01-fix1.md        3           4   1,164     137,856            0     791  success',
+    '  step-02.md             2           3  14,055      40,704            0     488  success',
+    '  total                 17          29  45,143     587,520            0  18,289',
     ...(cost ? [cost] : []),
     '',
   ].join('\n');
@@ -148,3 +148,60 @@ test('CLI exits 1 without a run folder argument', () => {
 function usage() {
   return require(SCRIPT);
 }
+
+test('CLI shows ? for records without reply counts and marks the total', (t) => {
+  const dir = tmpDir('dsc-usage-');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const runDir = path.join(dir, 'run');
+  fs.mkdirSync(runDir, { recursive: true });
+  const lines = [
+    { spec: 'step-01.md', turns: 23, status: 'success', input: 1, cacheRead: 0, cacheWrite: 0, output: 1 },
+    { spec: 'step-02.md', turns: 4, replies: 2, toolCalls: 3, status: 'success', input: 1, cacheRead: 0, cacheWrite: 0, output: 1 },
+  ];
+  fs.writeFileSync(path.join(runDir, 'usage.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const r = run(dir, [runDir]);
+  assert.equal(r.status, 0);
+  const rows = r.stdout.split('\n').map((l) => l.trim().split(/ +/));
+  assert.deepEqual(rows.find((c) => c[0] === 'step-01.md').slice(1, 3), ['?', '?']);
+  assert.deepEqual(rows.find((c) => c[0] === 'total').slice(1, 3), ['2+?', '3+?']);
+});
+
+test('CLI shows ? totals when no record has reply counts', (t) => {
+  const dir = tmpDir('dsc-usage-');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const runDir = path.join(dir, 'run');
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'usage.jsonl'), JSON.stringify({ spec: 'step-01.md', turns: 3, status: 'success' }) + '\n');
+  const r = run(dir, [runDir]);
+  const total = r.stdout.split('\n').map((l) => l.trim().split(/ +/)).find((c) => c[0] === 'total');
+  assert.deepEqual(total.slice(1, 3), ['?', '?']);
+});
+
+test('coderReplies counts distinct replies and tool calls, filtered by since', (t) => {
+  const { coderReplies } = require('../usage');
+  const dir = tmpDir('dsc-replies-');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const folder = path.join(dir, 'projects', 'P');
+  fs.mkdirSync(folder, { recursive: true });
+  const msg = (id, ts, tools) => ({
+    type: 'assistant',
+    timestamp: ts,
+    message: { id, content: tools.map((x) => ({ type: 'tool_use', id: x, name: 'Grep', input: {} })) },
+  });
+  const lines = [
+    msg('a', '2026-11-04T09:00:00Z', ['t1']),
+    msg('b', '2026-11-04T10:00:01Z', ['t2', 't3']),
+    msg('b', '2026-11-04T10:00:02Z', ['t4']),
+    { type: 'user', timestamp: '2026-11-04T10:00:03Z', message: { content: [{ type: 'tool_result' }] } },
+    msg('c', '2026-11-04T10:00:04Z', []),
+  ];
+  fs.writeFileSync(path.join(folder, 'abc-123.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\nnot json\n');
+
+  assert.deepEqual(coderReplies('abc-123', '2026-11-04T10:00:00Z', dir), { replies: 2, toolCalls: 3 });
+  assert.deepEqual(coderReplies('abc-123', null, dir), { replies: 3, toolCalls: 4 });
+  assert.deepEqual(coderReplies('abc-123', 'not a time', dir), { replies: 3, toolCalls: 4 });
+  assert.equal(coderReplies('missing', null, dir), null);
+  assert.equal(coderReplies('../x', null, dir), null);
+  assert.equal(coderReplies(null, null, dir), null);
+  assert.equal(coderReplies('abc-123', null, path.join(dir, 'nope')), null);
+});

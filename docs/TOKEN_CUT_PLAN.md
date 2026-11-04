@@ -366,11 +366,13 @@ PR 6 is skipped for now; PR 7 goes first. A, B and D go in one PR with one bump,
 - **D, turn limit.** Turns are scaled by the planner's estimate of changed lines: `turns = max(10, min(maxTurns, ceil(lines / 12)))`, so 300 lines get 25 turns and 600 lines get 50. `maxTurns` becomes a hard cap with a new default of 60. A new runner option `--max-turns N` passes the step's number, clamped to the cap. Fix specs are scaled the same way on their own estimated size. D also adds the runner prompt line "stop exploring once the spec answers your question" and the `delegate.md` rule that an `error_max_turns` run with a complete diff is reviewed as normal.
 - **Measure:** two large-benchmark runs on 0.6.0 (`bench-large-0.6.0-run1`, `-run2`), against `bench-large-0.5.0-run1`, 0.2.1 and Claude alone.
 - **Build:** a delegation run, stacked on PR #9.
+- **Turn counting (found and decided 2026-11-04, built by Claude directly):** `--max-turns` limits DeepSeek's replies, not tool calls. A low-cap test (six parallel Reads, then a Write) finished in 3 replies at cap 3, and stopped with `error_max_turns` after 2 replies at cap 2. A log's `num_turns` is tool calls + 1 on success and the cap + 1 on `error_max_turns`, so step 04 of the PR 7 run showed 63 under a cap of 30 (15 replies, 62 tool calls). print-result now counts replies and tool calls from the coder's session transcript, since the runner's start time, and prints `TURNS: <replies> replies (cap <N>), <tool calls> tool calls`. `usage.jsonl` keeps `turns` and adds `replies` and `toolCalls`; the usage table has `replies` and `tool calls` columns (old records `?`, totals `<sum>+?`).
 
 ## Lessons from PRs 1 and 2
 
 - `usage` in a coder log covers one whole coder run. `modelUsage` and `total_cost_usd` add up across `--resume` and use Claude prices, so never read them.
 - Cache reads are most of DeepSeek's input, so cost estimates price them separately.
+- A coder log's `num_turns` is not the number `--max-turns` limits: count DeepSeek's replies in the transcript instead (found 2026-11-04).
 - Session transcripts write each assistant message several times. Count each `message.id` once.
 - The run marker is deleted before the summary, so run data that the summary needs lives in `run.json` in the run folder.
 - DeepSeek can only run `allowedCommands` (`node --test` here). Claude tests anything that needs a shell, such as the runner scripts, itself.

@@ -92,6 +92,7 @@ $logPath = [IO.Path]::ChangeExtension($SpecFile, '.json')
 & node (Join-Path $scripts 'run-marker.js') touch
 # Snapshot the working tree before the coder runs, so this spec's changes can be diffed on their own
 & node (Join-Path $scripts 'step-diff.js') snap (Split-Path -Parent $SpecFile) ([IO.Path]::GetFileNameWithoutExtension($SpecFile))
+$startedAt = [DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
 try {
     $raw = Get-Content -Raw -Encoding UTF8 -LiteralPath $SpecFile | & claude @cliArgs
     $claudeExit = $LASTEXITCODE
@@ -102,6 +103,6 @@ finally {
 }
 [IO.File]::WriteAllText($logPath, ($raw | Out-String).Trim(), $utf8)
 
-& node (Join-Path $scripts 'print-result.js') $logPath $cfg.model
+& node (Join-Path $scripts 'print-result.js') $logPath $cfg.model --since $startedAt --cap $turns
 if ($claudeExit -ne 0 -or $LASTEXITCODE -ne 0) { exit 1 }
 exit 0

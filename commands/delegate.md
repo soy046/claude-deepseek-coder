@@ -26,7 +26,8 @@ Run every command below from the project root. Plugin scripts:
 | Verify check | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-check.js" --log "<log>" "<cmd>"` (run it with the maximum tool timeout, 600000 ms) |
 
 The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR`, `USAGE`,
-`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines. DeepSeek's report ends with one
+`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines. `TURNS` shows DeepSeek's replies (what the turn limit
+counts) with the run's cap, and the tool calls they made; `?` means the coder's transcript wasn't found. DeepSeek's report ends with one
 `VERIFY <cmd> -> exit <N>` line for each command in the spec's "Verify with" section.
 Run-check prints one `PASS` line when the command passes. When it fails it prints a `FAIL` line, the last 60 lines of
 output and the log path. It appends the full output to the log you name: `<run folder>/<spec name>-verify.log`

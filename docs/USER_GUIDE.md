@@ -104,7 +104,7 @@ A goal this small would, by default, make Claude say so first and ask whether to
 
 **4. You review the spec.** Claude first writes the step's stub and tests into your project: here, `subtract` in `src/math.js` with a body that throws `not implemented`, and the agreed test cases. Then it writes `step-01.md` in the run folder and, with the default `approvalMode` of `step`, shows you the whole spec in the conversation. If you ask for changes, it updates the spec and shows it again. Nothing goes to DeepSeek until you approve that version.
 
-**5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. The coder's output ends with a `USAGE` line with the tokens DeepSeek used, and an estimated cost when prices are set. In this run DeepSeek took 7 turns and needed no fix rounds.
+**5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. The coder's output ends with a `USAGE` line with the tokens DeepSeek used, and an estimated cost when prices are set. In this run DeepSeek took 7 replies and needed no fix rounds.
 
 **6. Claude shows what changed.** Claude reviews the step's diff, not whole files, and checks the `VERIFY` lines that end DeepSeek's report: one per verify command, with its exit code. It runs a command itself, through `run-check.js`, only when its line is missing. Once the step passes review, Claude shows you the change in the conversation. That is a small list of files with their status letters and line counts:
 
@@ -175,7 +175,7 @@ These are all the keys:
 |---|---|---|---|
 | `allowedCommands` | array of strings | `[]` | The only shell commands DeepSeek may run. Prefix match: `"npm test"` also allows `npm test -- --watch=false`. |
 | `model` | DeepSeek model name | `deepseek-flash[1m]` | Model the coder uses. |
-| `maxTurns` | positive integer | `60` | Upper limit on turns per coder run. Claude gives each run its own limit from the size of its spec: about 1 turn per 12 changed lines, at least 10, capped at this value. |
+| `maxTurns` | positive integer | `60` | Upper limit on DeepSeek replies per coder run; one reply can make several tool calls. Claude gives each run its own limit from the size of its spec: about 1 turn per 12 changed lines, at least 10, capped at this value. |
 | `extraInstructions` | string | `""` | Project rules appended to the coder's system prompt. |
 | `approvalMode` | `step` / `plan` / `auto` | `step` | `step`: you review and approve every spec, fix specs included, before DeepSeek gets it. `plan`: you approve the step list once. `auto`: no stops. |
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
@@ -197,7 +197,7 @@ When Claude proposes the config, it fills in `allowedCommands` from the project'
 
 **`smallTaskPolicy`.** For a small task, about 300 changed lines or fewer in 6 files or fewer, delegating costs more Claude tokens than letting Claude write the code, because planning, specs and review add up. With `ask` (the default), Claude gives its estimate and asks whether to do the task directly. Use `direct` to have it do small tasks itself without asking, and `delegate` to always delegate. When Claude does a task directly, it still confirms facts and asks its questions first, then edits the files and runs the tests itself. There is no run folder, no usage table and no commit, so you review and commit the changes yourself.
 
-**`maxTurns`.** Claude gives each coder run its own turn limit from the size of its spec: about one turn per 12 changed lines, at least 10, so a 300-line step gets 25 turns. `maxTurns` (default `60`) caps that number. If a run still hits its limit (`STATUS: error_max_turns`) but its diff is complete, Claude reviews and accepts it as normal.
+**`maxTurns`.** Claude gives each coder run its own turn limit from the size of its spec: about one turn per 12 changed lines, at least 10, so a 300-line step gets 25 turns. `maxTurns` (default `60`) caps that number. The limit counts DeepSeek's replies; the coder output's `TURNS` line shows them next to the cap, plus the tool calls they made. If a run still hits its limit (`STATUS: error_max_turns`) but its diff is complete, Claude reviews and accepts it as normal.
 
 **`allowedCommands`.** These are the only shell commands DeepSeek may run. Entries are prefix matches, so `"npm test"` also allows `npm test -- --watch=false`, but not `npm run test`. Use commands that match your project:
 
@@ -270,6 +270,10 @@ DeepSeek bills your DeepSeek account; Claude's planning and review count against
 **Which Claude model should I use?**
 
 Claude plans, writes the specs and reviews every diff on the model of your Claude Code session; the plugin doesn't change it. Pick it with `/model` before you start the run. Sonnet costs less than Opus. Use Opus for goals that need careful design or a hard review. The model setting in `config.json` only applies to DeepSeek.
+
+**Why does a coder run show more tool calls than its turn limit?**
+
+The turn limit counts DeepSeek's replies, and one reply can ask for several tool calls at once, such as reading six files or running a dozen searches. The `TURNS` line shows both, for example `TURNS: 15 replies (cap 30), 62 tool calls`, and the usage table has a column for each. Both counts come from the coder's session transcript, so they are best-effort: when the transcript can't be found they show `?`, and runs recorded before 0.6.0 show `?` too.
 
 **How do I change the DeepSeek model?**
 
