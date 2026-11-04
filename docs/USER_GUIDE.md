@@ -102,7 +102,7 @@ A goal this small would, by default, make Claude say so first and ask whether to
 
 **3. Claude asks its questions and plans.** Claude explores the code. It shows you what it found there, such as where `src/math.js` exports its functions and which command runs the tests, and asks you to confirm. Then it asks about every choice the goal leaves open instead of guessing. In this example, that could be whether `subtract` should check its arguments' types and which test cases to add. If an answer is vague, Claude offers concrete options and asks again. When nothing is open, it splits the goal into small ordered steps, creates a run folder at `.deepseek-coder/plans/<date-time>-<slug>/`, and records your answers in `plan.md` there. It shows you the numbered step list. In this example the plan had one step.
 
-**4. You review the spec.** Claude writes `step-01.md` in the run folder and, with the default `approvalMode` of `step`, shows you the whole spec in the conversation. If you ask for changes, it updates the spec and shows it again. Nothing goes to DeepSeek until you approve that version.
+**4. You review the spec.** Claude first writes the step's stub and tests into your project: here, `subtract` in `src/math.js` with a body that throws `not implemented`, and the agreed test cases. Then it writes `step-01.md` in the run folder and, with the default `approvalMode` of `step`, shows you the whole spec in the conversation. If you ask for changes, it updates the spec and shows it again. Nothing goes to DeepSeek until you approve that version.
 
 **5. DeepSeek works in the background.** Claude starts the coder in the background. The coder is a separate headless Claude Code process; its output goes to `step-01.json` next to the spec. Claude waits for it to finish and does not edit files meanwhile. The coder's output ends with a `USAGE` line with the tokens DeepSeek used, and an estimated cost when prices are set. In this run DeepSeek took 7 turns and needed no fix rounds.
 
@@ -157,7 +157,7 @@ Settings live in `.deepseek-coder/config.json` in your project. Here is an examp
 {
   "allowedCommands": ["npm test", "npm run lint"],
   "model": "deepseek-flash[1m]",
-  "maxTurns": 20,
+  "maxTurns": 60,
   "extraInstructions": "",
   "approvalMode": "step",
   "gitMode": "commit",
@@ -175,7 +175,7 @@ These are all the keys:
 |---|---|---|---|
 | `allowedCommands` | array of strings | `[]` | The only shell commands DeepSeek may run. Prefix match: `"npm test"` also allows `npm test -- --watch=false`. |
 | `model` | DeepSeek model name | `deepseek-flash[1m]` | Model the coder uses. |
-| `maxTurns` | positive integer | `20` | Turn limit per coder run. |
+| `maxTurns` | positive integer | `60` | Upper limit on turns per coder run. Claude gives each run its own limit from the size of its spec: about 1 turn per 12 changed lines, at least 10, capped at this value. |
 | `extraInstructions` | string | `""` | Project rules appended to the coder's system prompt. |
 | `approvalMode` | `step` / `plan` / `auto` | `step` | `step`: you review and approve every spec, fix specs included, before DeepSeek gets it. `plan`: you approve the step list once. `auto`: no stops. |
 | `gitMode` | `commit` / `stage` / `none` | `commit` | What happens after an accepted step: a Conventional Commit, `git add -A`, or nothing. |
@@ -196,6 +196,8 @@ When Claude proposes the config, it fills in `allowedCommands` from the project'
 **`showDiff`.** Use `stat` (the default) to see only the list of changed files after each step; Claude still reads the full diff itself to review it, and shows it to you when you ask. Use `full` if you want every step's full diff in the conversation, which makes long runs much longer.
 
 **`smallTaskPolicy`.** For a small task, about 300 changed lines or fewer in 6 files or fewer, delegating costs more Claude tokens than letting Claude write the code, because planning, specs and review add up. With `ask` (the default), Claude gives its estimate and asks whether to do the task directly. Use `direct` to have it do small tasks itself without asking, and `delegate` to always delegate. When Claude does a task directly, it still confirms facts and asks its questions first, then edits the files and runs the tests itself. There is no run folder, no usage table and no commit, so you review and commit the changes yourself.
+
+**`maxTurns`.** Claude gives each coder run its own turn limit from the size of its spec: about one turn per 12 changed lines, at least 10, so a 300-line step gets 25 turns. `maxTurns` (default `60`) caps that number. If a run still hits its limit (`STATUS: error_max_turns`) but its diff is complete, Claude reviews and accepts it as normal.
 
 **`allowedCommands`.** These are the only shell commands DeepSeek may run. Entries are prefix matches, so `"npm test"` also allows `npm test -- --watch=false`, but not `npm run test`. Use commands that match your project:
 
@@ -237,7 +239,7 @@ numbers. Verify with npm test.
 
 ## Fix rounds: when Claude stops to ask you
 
-After DeepSeek finishes a step, Claude reviews the result. If something fails, Claude writes a fix spec, `step-NN-fixK.md`, and resumes the same DeepSeek session with it. Under a `# Step NN fix K` heading it has three sections: Problems (file, line or function, expected versus actual), Changes needed, and Verify with. It lists only what is wrong and never repeats the original spec, which DeepSeek still has. That attempt is a **fix round**.
+After DeepSeek finishes a step, Claude reviews the result. If something fails, Claude writes a fix spec, `step-NN-fixK.md`, and resumes the same DeepSeek session with it. Under a `# Step NN fix K` heading it has four sections: Problems (file, line or function, expected versus actual), Changes needed, Test files, and Verify with. When a test is missing or wrong, Claude writes or corrects it itself and lists it under Test files. It lists only what is wrong and never repeats the original spec, which DeepSeek still has. That attempt is a **fix round**.
 
 `maxFixRounds` (default `3`) limits how many correction attempts a step gets. After the last failed fix round, Claude stops, shows you what failed — the spec, the latest DeepSeek report and the failing checks — and asks you what to do. The run marker stays in place while you decide. If you tell Claude to edit the code itself, it ends the run first so the edit guard lets it through.
 
@@ -245,9 +247,11 @@ After each fix round Claude reads only what the fix changed, compared with a sna
 
 **The final check.** When every step is done, Claude runs each step's verify commands once more through `run-check.js`. If one fails, it writes `final-fixK.md` in the same format and runs it in a new DeepSeek session, because the fix may touch more than one step. It gets up to `maxFixRounds` attempts; after that Claude stops and asks you, as above. In the run's combined file list, a final fix's files are counted under the last step.
 
+**Sessions across steps.** Step 01 starts a new DeepSeek session. A later step continues the previous step's session when both plan to edit the same file, so its spec can refer back instead of repeating the project's conventions; otherwise it starts a new one. Final fixes always start a new session.
+
 ## Safety in plain words
 
-**The edit guard.** While a run is active, a hook blocks Claude from editing anything except the run folder (`.deepseek-coder/plans/`) and the config file (`.deepseek-coder/config.json`). Source changes have to go through DeepSeek. If a crash leaves a marker behind, it is ignored after `markerExpiryMinutes` of inactivity, or you can clear it with `/deepseek-coder:reset`.
+**The edit guard.** While a run is active, a hook blocks Claude from editing anything except the run folder (`.deepseek-coder/plans/`), the config file (`.deepseek-coder/config.json`), and the stub and test files Claude registers for the run with `run-marker.js allow`. Everything else in your source has to go through DeepSeek. DeepSeek fills in the stubs but may not change Claude's tests: a step that changes them fails review. If a crash leaves a marker behind, it is ignored after `markerExpiryMinutes` of inactivity, or you can clear it with `/deepseek-coder:reset`.
 
 **The recursion guard.** The coder can't start another delegation. The wrapper refuses to run inside a coder (`DEEPSEEK_CODER_ACTIVE=1`), and the coder is denied shell launchers, the Skill tool and subagents.
 

@@ -23,7 +23,7 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 4 | Size check before delegating small tasks | 0.5.0 | Merged (#7); one large-benchmark run done (see Results) |
 | 5 | Model names and the planner model | none (docs only) | Built 2026-11-04, branch `docs/model-names` |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03); skipped for now (2026-11-04), PR 7 goes first |
-| 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Decided 2026-11-04 (A, B, D); built as a delegation run on `feat/shorter-specs` |
+| 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Built 2026-11-04 on `feat/shorter-specs` (run `2026-11-04-1724-shorter-specs`) |
 
 ## Decisions
 
