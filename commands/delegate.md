@@ -18,15 +18,16 @@ Run every command below from the project root. Plugin scripts:
 | Purpose | Command |
 |---|---|
 | Resolved config | `node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.js"` |
-| Run marker | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-marker.js" <start "<run folder>" \| stop \| status>` |
-| Coder, Windows | `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.ps1" -SpecFile "<spec>" [-ResumeSession <id>]` |
-| Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>]` |
+| Run marker | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-marker.js" <start "<run folder>" \| allow <path>... \| stop \| status>` |
+| Coder, Windows | `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.ps1" -SpecFile "<spec>" [-ResumeSession <id>] [-MaxTurns <N>]` |
+| Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>] [--max-turns <N>]` |
 | Usage tables | `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" "<run folder>"` (DeepSeek) and `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" claude "<run folder>"` (Claude) |
 | Step diffs | `node "${CLAUDE_PLUGIN_ROOT}/scripts/step-diff.js" <diff "<run folder>" <name> \| stat "<run folder>" <NN> \| run "<run folder>">` |
 | Verify check | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-check.js" --log "<log>" "<cmd>"` (run it with the maximum tool timeout, 600000 ms) |
 
 The coder prints DeepSeek's report followed by `SESSION_ID`, `MODEL`, `TURNS / STATUS / ERROR`, `USAGE`,
-`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines. DeepSeek's report ends with one
+`EST. DEEPSEEK COST` (only when `deepseekPricing` is set) and `LOG` lines. `TURNS` shows DeepSeek's replies (what the turn limit
+counts) with the run's cap, and the tool calls they made; `?` means the coder's transcript wasn't found. DeepSeek's report ends with one
 `VERIFY <cmd> -> exit <N>` line for each command in the spec's "Verify with" section.
 Run-check prints one `PASS` line when the command passes. When it fails it prints a `FAIL` line, the last 60 lines of
 output and the log path. It appends the full output to the log you name: `<run folder>/<spec name>-verify.log`
@@ -87,7 +88,10 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 1. Explore the codebase and ask the user every open question, as the planning skill's sections 1 and 2 say.
    Do not go on until every point is a confirmed fact or a decision the user made.
-2. Split the goal into small, ordered steps. Each step should be finishable by DeepSeek within its `maxTurns`.
+2. Split the goal into small, ordered steps. Each step should be finishable by DeepSeek within `maxTurns` turns.
+   For each step, estimate L, the lines DeepSeek will change. Its turn limit is T = max(10, min(maxTurns, ceil(L / 12))),
+   so 300 lines get 25 turns. Step 01 runs in a new session. Every later step resumes the previous step's session if
+   their "Files to create or change" lists share a path, and runs in a new session otherwise.
    If Preflight item 2 couldn't tell the task's size, and the plan now shows it is small (as defined there), tell
    the user so before you create the run folder, and apply `smallTaskPolicy` as Preflight item 2 says. If they pick
    doing it directly, or the policy is `direct`, follow "Small tasks done directly" with the plan you already have.
@@ -101,37 +105,60 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 ## 3. For each step NN (01, 02, ...)
 
-a. **Spec.** Write `<run folder>/step-NN.md`:
+a. **Stubs, tests and spec.** First write this step's interfaces and acceptance tests as real files:
+   - Register every file you will write with marker `allow <path>...` before writing it; the edit guard blocks the rest.
+   - **Stubs:** every new or changed function, class, method, route or type, with its exact signature, types and doc
+     comment, and a body that throws `not implemented`. Put them where the code belongs, in new or existing files.
+     A step with no new interface (docs, config) has no stubs.
+   - **Tests:** if `allowedCommands` has a command that runs tests, write the step's acceptance tests as test files
+     that its verify command runs; they fail until DeepSeek fills in the stubs. Without such a command, write no tests
+     and keep the acceptance criteria in prose.
+   - Write nothing else in source files: the bodies are DeepSeek's work.
+
+   Then write `<run folder>/step-NN.md`:
 
 ```markdown
 # Step NN: <title>
 ## Goal
 ## Files to create or change
-## Required interfaces (exact signatures, types, routes, schemas)
+## Stub files (written by the planner; fill in the bodies)
+## Test files (written by the planner; do not change them)
+## Acceptance criteria (only what the tests don't cover; all of them when there are no test files)
 ## Constraints (style, libraries to use or avoid)
-## Acceptance criteria
 ## Verify with (only commands from allowedCommands)
 ## Out of scope
 ```
+
+   "Files to create or change" lists every file DeepSeek edits, stub files included. Test files appear only under
+   "Test files", and "Out of scope" names them too. A section with nothing in it says `None`. A step that resumes the
+   previous step's session may say "same conventions as step NN-1" and refer to earlier steps' files and interfaces
+   instead of restating them; a step in a new session restates everything it needs.
 
    Then run the implement-ready check (planning skill, section 4).
 
 b. **Approval** (`step` mode only): review the spec with the user as the planning skill's section 5 says.
    Show the full spec in your message and delegate only after the user explicitly approves it.
 
-c. **Delegate.** Run the coder command for this OS with the spec path, **in the background** (`run_in_background`).
+c. **Delegate.** Run the coder command for this OS with the spec path, the turn option set to the step's T, and, when
+   the step resumes, the resume option set to the previous step's latest `SESSION_ID` (after its fix rounds). Run it
+   **in the background** (`run_in_background`).
    Wait for the completion notification; do not poll it and do not change files meanwhile.
 
 d. **Read the result.** Exit 3: stop the run and tell the user the recursion guard fired.
-   Exit 1 or `ERROR: true`: count it as a failed attempt and go to (f).
+   `STATUS: error_max_turns`: review the step as in (e) anyway. If the diff meets every acceptance criterion and every
+   verify command passes (run missing `VERIFY` lines with run-check), accept the step as normal; otherwise go to (f).
+   Any other exit 1 or `ERROR: true`: count it as a failed attempt and go to (f).
+   Read the result of a fix round or a final fix the same way.
 
 e. **Review.** Review the diff, not whole files, and read DeepSeek's test results instead of running the tests again.
    - In a git repo (any `gitMode`): run step-diff `diff "<run folder>" step-NN` and read it. It shows everything this
      step changed since the snapshot taken before its first coder run. Note the names of the tests it added.
    - Not a git repo: read every file the coder reports changing.
    - Open a file, or part of one, only to settle a specific question the diff raises.
-   - Check every acceptance criterion against the diff. Do not write extra tests, fuzzers or scratch scripts. If test
-     coverage looks thin, say so in a fix spec and let DeepSeek add the tests.
+   - Check every acceptance criterion against the diff. Do not write fuzzers or scratch scripts. If test coverage
+     looks thin, write the missing tests yourself as in (a) and list them in the fix spec's "Test files" section.
+   - **Your test files.** If the step changed any file listed under "Test files" (in the step-diff, or in the files
+     the coder reports changing), the step fails; go to (f).
    - **Tests.** Compare the `VERIFY` lines at the end of DeepSeek's report with the spec's "Verify with" commands:
      - Every command has a line with exit 0: the tests pass. Do not run them yourself.
      - Any line has a non-zero exit: the step fails. Go to (f) and write the fix spec straight away, without
@@ -146,13 +173,16 @@ f. **Fix rounds.** If the step is wrong, for fix round K (1 to `maxFixRounds`): 
    # Step NN fix K
    ## Problems (file, line or function, expected vs actual)
    ## Changes needed
+   ## Test files (written by the planner; do not change them)
    ## Verify with
    ```
 
-   List only the problems and the changes needed. Never restate the original spec: DeepSeek still has it in its
+   List only the problems and the changes needed. When a test is missing or wrong, write or correct it yourself as in
+   (a) and list it under "Test files"; otherwise that section says `None`. Never restate the original spec: DeepSeek still has it in its
    resumed session. If a problem needs a decision the plan does not cover, ask the user first (planning skill,
    section 6). Run the implement-ready check, and in `step` mode review the fix spec with the user as in (b). Then run
-   the coder with that spec and the resume option set to the `SESSION_ID` from the latest output. Review again as in
+   the coder with that spec, the resume option set to the `SESSION_ID` from the latest output, and the turn option set
+   to the fix's own T (Plan item 2, from the fix's estimated changed lines). Review again as in
    (e): in a git repo, read only step-diff `diff "<run folder>" step-NN-fixK` (what this fix changed); without a repo,
    read the files the fix reports changing. Either way, check every acceptance criterion and apply the test rules
    from (e) to the fix's report, with run-check log `<run folder>/step-NN-fixK-verify.log`.
@@ -197,7 +227,7 @@ h. **Accept.**
      sections from 3f, headed `# Final fix K`, listing the failing commands and the problems their output shows. If a
      problem needs a decision the plan does not cover, ask the user first. Run the implement-ready check, and in
      `step` mode review the spec with the user as in 3b. Run the coder with that spec in a **new** session (no resume
-     option), because the fix can span several steps. Review the change as in 3e: in a git repo, read step-diff
+     option), because the fix can span several steps, with the turn option set to the fix's own T (Plan item 2). Review the change as in 3e: in a git repo, read step-diff
      `diff "<run folder>" final-fixK`; without a repo, read the files the fix reports changing. Then show the user
      what changed: list the changed files one per line, with no `+/-` counts. With `showDiff` `stat`, add the line
      `Full diff: ask me to show it.`; with `full`, show the diff in a ```diff code block, without trimming it.
@@ -240,6 +270,7 @@ edit files.
 
 ## Rules
 
-- Never edit source files yourself during a run. Only the run folder and `.deepseek-coder/config.json` are yours.
+- Never edit source files yourself during a run. Only the run folder, `.deepseek-coder/config.json`, and the stub and
+  test files you register with marker `allow` (3a) are yours.
 - Never delete run folders or spec files.
 - Never write the API key into a file or a command.

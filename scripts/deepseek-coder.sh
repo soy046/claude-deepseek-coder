@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # deepseek-coder.sh - runs one coding step on DeepSeek through a headless Claude Code process.
 # macOS/Linux. Run from the project root:
-#   bash <plugin>/scripts/deepseek-coder.sh --spec-file <spec.md> [--resume-session <id>]
+#   bash <plugin>/scripts/deepseek-coder.sh --spec-file <spec.md> [--resume-session <id>] [--max-turns <N>]
+# --max-turns N: this run's turn limit, capped at maxTurns (default: maxTurns).
 # Exit codes: 0 success, 1 failure, 3 refused by the recursion guard.
 set -euo pipefail
 
@@ -9,10 +10,12 @@ fail() { echo "deepseek-coder: $1" >&2; exit "${2:-1}"; }
 
 SPEC=""
 RESUME=""
+TURNS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --spec-file) SPEC="${2:-}"; shift 2 ;;
     --resume-session) RESUME="${2:-}"; shift 2 ;;
+    --max-turns) TURNS="${2:-}"; shift 2 ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
@@ -31,7 +34,11 @@ PROJECT="$(pwd)"
 get() { node "$SCRIPTS/resolve-config.js" --project "$PROJECT" --get "$1"; }
 MODEL="$(get model)"
 SMALL_MODEL="$(get smallModel)"
-MAX_TURNS="$(get maxTurns)"
+if [ -n "$TURNS" ]; then
+  MAX_TURNS="$(node "$SCRIPTS/resolve-config.js" --project "$PROJECT" --turns "$TURNS")" || fail "invalid --max-turns: $TURNS"
+else
+  MAX_TURNS="$(get maxTurns)"
+fi
 EXTRA="$(get extraInstructions)"
 TOOLS=()
 while IFS= read -r line; do
@@ -43,6 +50,7 @@ trap 'rm -f "$PROMPT_FILE"' EXIT
 cat > "$PROMPT_FILE" <<'EOF'
 You are the CODING agent. A separate planner wrote the spec you receive on stdin.
 Implement exactly what the spec says. Do not redesign or expand the scope.
+Stop exploring once the spec and the files it names answer your question; leave turns for the Verify with commands and your report.
 Never delegate work and never run the deepseek-coder scripts.
 You may only run the shell commands you are allowed. If a command you need is denied, say so in your report.
 When finished, report: files changed, commands run and their results, and anything you could not do.
@@ -88,11 +96,12 @@ LOG="${SPEC%.md}.json"
 node "$SCRIPTS/run-marker.js" touch
 # Snapshot the working tree before the coder runs, so this spec's changes can be diffed on their own
 node "$SCRIPTS/step-diff.js" snap "$(dirname "$SPEC")" "$(basename "$SPEC" .md)" || true
+STARTED_AT="$(node -e 'process.stdout.write(new Date().toISOString())')"
 set +e
 claude "${ARGS[@]}" < "$SPEC" > "$LOG"
 CLAUDE_EXIT=$?
 node "$SCRIPTS/run-marker.js" touch
-node "$SCRIPTS/print-result.js" "$LOG" "$MODEL"
+node "$SCRIPTS/print-result.js" "$LOG" "$MODEL" --since "$STARTED_AT" --cap "$MAX_TURNS"
 PRINT_EXIT=$?
 set -e
 

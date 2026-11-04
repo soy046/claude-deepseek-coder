@@ -21,11 +21,13 @@ function makeProject(t) {
   return dir;
 }
 
-function writeMarker(dir) {
+function writeMarker(dir, allowed) {
   const now = new Date().toISOString();
+  const marker = { startedAt: now, updatedAt: now, runDir: RUN_DIR };
+  if (allowed !== undefined) marker.allowed = allowed;
   fs.writeFileSync(
     path.join(dir, '.deepseek-coder', 'plans', '.run-active'),
-    JSON.stringify({ startedAt: now, updatedAt: now, runDir: RUN_DIR }, null, 2)
+    JSON.stringify(marker, null, 2)
   );
 }
 
@@ -129,4 +131,28 @@ test('without a marker nothing is recorded', (t) => {
   const r = runGuard(dir, path.join(dir, RUN_DIR, 'step-01.md'), 'C:/t/a.jsonl');
   assert.equal(r.status, 0);
   assert.equal(fs.readFileSync(runJsonPath(dir), 'utf8'), before);
+});
+
+test('allows a write to a registered path', (t) => {
+  const dir = makeProject(t);
+  writeMarker(dir, ['src/a.js']);
+
+  const r = runGuard(dir, path.join(dir, 'src', 'a.js'));
+  assert.equal(r.status, 0);
+});
+
+test('still blocks an unregistered path when others are registered', (t) => {
+  const dir = makeProject(t);
+  writeMarker(dir, ['src/a.js']);
+
+  const r = runGuard(dir, path.join(dir, 'src', 'b.js'));
+  assert.equal(r.status, 2);
+});
+
+test('ignores non-string entries in allowed', (t) => {
+  const dir = makeProject(t);
+  writeMarker(dir, [42, 'src/a.js']);
+
+  assert.equal(runGuard(dir, path.join(dir, 'src', 'a.js')).status, 0);
+  assert.equal(runGuard(dir, path.join(dir, 'src', 'b.js')).status, 2);
 });

@@ -4,6 +4,7 @@
 //
 // Usage (run from the project root):
 //   node run-marker.js start <runDir>   create the marker for a run, and <runDir>/run.json if missing
+//   node run-marker.js allow <path>...  let the planner write these project-relative files during the run
 //   node run-marker.js touch            refresh the marker's activity time (no-op without a marker)
 //   node run-marker.js stop             remove the marker
 //   node run-marker.js status           print active / expired / none
@@ -45,9 +46,11 @@ function writeMarker(m) {
   fs.writeFileSync(markerPath, JSON.stringify(m, null, 2));
 }
 
-const [cmd, runDir] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const cmd = argv[0];
 switch (cmd) {
   case 'start': {
+    const runDir = argv[1];
     if (!runDir) {
       process.stderr.write('usage: run-marker.js start <runDir>\n');
       process.exit(1);
@@ -73,6 +76,64 @@ switch (cmd) {
     } catch {
       // Recording run.json is best-effort; it must not change start's output or exit code
     }
+    break;
+  }
+  case 'allow': {
+    const given = argv.slice(1);
+    if (given.length === 0) {
+      process.stderr.write('usage: run-marker.js allow <path> [<path> ...]\n');
+      process.exit(1);
+    }
+    const noRun = () => {
+      process.stderr.write('run-marker: no active run; start one before allowing paths\n');
+      process.exit(1);
+    };
+    if (!fs.existsSync(markerPath)) noRun();
+    let m;
+    try {
+      m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    } catch {
+      noRun();
+    }
+    if (m === null || typeof m !== 'object' || Array.isArray(m)) noRun();
+    const idleMin = (Date.now() - Date.parse(m.updatedAt || m.startedAt)) / 60000;
+    if (!(idleMin <= expiryMinutes())) noRun();
+
+    const win = process.platform === 'win32';
+    const rels = [];
+    for (const p of given) {
+      const abs = path.resolve(projectDir, p);
+      const rel = path.relative(projectDir, abs);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+        process.stderr.write(`run-marker: ${p} is outside the project\n`);
+        process.exit(1);
+      }
+      const first = rel.split(path.sep)[0];
+      const hidden = win ? first.toLowerCase() === '.deepseek-coder' : first === '.deepseek-coder';
+      if (hidden) {
+        process.stderr.write(
+          `run-marker: ${p} is inside .deepseek-coder/; the run folder and config are already writable\n`
+        );
+        process.exit(1);
+      }
+      if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+        process.stderr.write(`run-marker: ${p} is a directory; allow files only\n`);
+        process.exit(1);
+      }
+      rels.push(rel.split(path.sep).join('/'));
+    }
+
+    const key = (s) => (win ? s.toLowerCase() : s);
+    const allowed = Array.isArray(m.allowed) ? m.allowed.slice() : [];
+    const seen = new Set(allowed.filter((a) => typeof a === 'string').map(key));
+    for (const rel of rels) {
+      if (!seen.has(key(rel))) {
+        allowed.push(rel);
+        seen.add(key(rel));
+      }
+    }
+    writeMarker({ ...m, allowed });
+    process.stdout.write(`Allowed for the planner: ${rels.join(', ')}\n`);
     break;
   }
   case 'touch': {
@@ -101,6 +162,6 @@ switch (cmd) {
     break;
   }
   default:
-    process.stderr.write('usage: run-marker.js <start <runDir> | touch | stop | status>\n');
+    process.stderr.write('usage: run-marker.js <start <runDir> | allow <path>... | touch | stop | status>\n');
     process.exit(1);
 }

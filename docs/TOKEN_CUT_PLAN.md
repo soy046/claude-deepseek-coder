@@ -22,8 +22,8 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Merged (#6) |
 | 4 | Size check before delegating small tasks | 0.5.0 | Merged (#7); one large-benchmark run done (see Results) |
 | 5 | Model names and the planner model | none (docs only) | Built 2026-11-04, branch `docs/model-names` |
-| 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
-| 7 | Shorter specs: interface + tests, one DeepSeek session per run | not set | Proposed (2026-11-04) |
+| 6 | Optional smaller review model | not set | Proposed (2026-11-03); skipped for now (2026-11-04), PR 7 goes first |
+| 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Built 2026-11-04 on `feat/shorter-specs` (run `2026-11-04-1724-shorter-specs`) |
 
 ## Decisions
 
@@ -323,7 +323,7 @@ The third 2026-10-28 review idea. Not decided. Its effect is told apart from PRs
 
 ## PR 7: shorter specs (proposed 2026-11-04)
 
-Not decided. With diff re-typing gone (PR 2), specs are the largest planner output left that delegation adds: about 25–31k characters per large run (roughly 8–9k tokens), for 56–60k characters of code. On a tightly specified task the spec is nearly the code, so this is where the remaining gap to Claude alone sits.
+Decided 2026-11-04; see "Decisions (2026-11-04)" at the end of this section. The ideas below are the proposal as written. With diff re-typing gone (PR 2), specs are the largest planner output left that delegation adds: about 25–31k characters per large run (roughly 8–9k tokens), for 56–60k characters of code. On a tightly specified task the spec is nearly the code, so this is where the remaining gap to Claude alone sits.
 
 **Data from a real run (2026-11-04).** A three-step run in another project (`claude_wechat_demo`, the home web page's 今日要做 list, about 1,170 added lines) used 19,600 characters of specs: step specs of 6,550 / 5,917 / 7,144 characters with full interfaces, routes and file:line anchors. All three coder runs ended with `error_max_turns` at 21 turns (`maxTurns` 20) after the code was done but before the report, so no `VERIFY` lines came back and the planner ran the build itself each time. The diffs needed no fix rounds. Long, exact specs did not stop DeepSeek from spending turns reading around, and 20 turns is short for a 350–550-line step. DeepSeek cost 1.0 CNY in all.
 
@@ -356,10 +356,23 @@ Ideas, from the 2026-11-03 discussions (the parallel-workers chat and the Tobs b
 
 **Docs:** the spec template in `delegate.md`, the planning skill's sections 3–4, the config table (`maxTurns` default), and a user-guide note on what a spec now looks like.
 
+### Decisions (2026-11-04)
+
+PR 6 is skipped for now; PR 7 goes first. A, B and D go in one PR with one bump, to 0.6.0. C (spec writing rules) is left out.
+
+- **A, interface + tests.** The planner writes each step's interface stubs (exact signatures, types, doc comments, bodies throwing `not implemented`) and acceptance tests as real files, in new or existing files. When `allowedCommands` has no test runner, it still writes the stubs, and the acceptance criteria stay in prose.
+- **A, edit guard.** Before writing, the planner registers the paths with a new `run-marker.js allow <path>...` command. The paths are stored in the marker, and the guard allows exactly those, in addition to the run folder and config as today.
+- **B, one session per run.** Step NN resumes step NN-1's latest `SESSION_ID` (after its fix rounds) when step NN's "Files to create or change" overlaps step NN-1's. Both are planned lists, since DeepSeek is expected to work to plan. Otherwise the step starts a new session. Final fixes still start a new session (PR 3).
+- **D, turn limit.** Turns are scaled by the planner's estimate of changed lines: `turns = max(10, min(maxTurns, ceil(lines / 12)))`, so 300 lines get 25 turns and 600 lines get 50. `maxTurns` becomes a hard cap with a new default of 60. A new runner option `--max-turns N` passes the step's number, clamped to the cap. Fix specs are scaled the same way on their own estimated size. D also adds the runner prompt line "stop exploring once the spec answers your question" and the `delegate.md` rule that an `error_max_turns` run with a complete diff is reviewed as normal.
+- **Measure:** two large-benchmark runs on 0.6.0 (`bench-large-0.6.0-run1`, `-run2`), against `bench-large-0.5.0-run1`, 0.2.1 and Claude alone.
+- **Build:** a delegation run, stacked on PR #9.
+- **Turn counting (found and decided 2026-11-04, built by Claude directly):** `--max-turns` limits DeepSeek's replies, not tool calls. A low-cap test (six parallel Reads, then a Write) finished in 3 replies at cap 3, and stopped with `error_max_turns` after 2 replies at cap 2. A log's `num_turns` is tool calls + 1 on success and the cap + 1 on `error_max_turns`, so step 04 of the PR 7 run showed 63 under a cap of 30 (15 replies, 62 tool calls). print-result now counts replies and tool calls from the coder's session transcript, since the runner's start time, and prints `TURNS: <replies> replies (cap <N>), <tool calls> tool calls`. `usage.jsonl` keeps `turns` and adds `replies` and `toolCalls`; the usage table has `replies` and `tool calls` columns (old records `?`, totals `<sum>+?`).
+
 ## Lessons from PRs 1 and 2
 
 - `usage` in a coder log covers one whole coder run. `modelUsage` and `total_cost_usd` add up across `--resume` and use Claude prices, so never read them.
 - Cache reads are most of DeepSeek's input, so cost estimates price them separately.
+- A coder log's `num_turns` is not the number `--max-turns` limits: count DeepSeek's replies in the transcript instead (found 2026-11-04).
 - Session transcripts write each assistant message several times. Count each `message.id` once.
 - The run marker is deleted before the summary, so run data that the summary needs lives in `run.json` in the run folder.
 - DeepSeek can only run `allowedCommands` (`node --test` here). Claude tests anything that needs a shell, such as the runner scripts, itself.
@@ -370,7 +383,7 @@ Ideas, from the 2026-11-03 discussions (the parallel-workers chat and the Tobs b
 1. **PR 5 version:** settled 2026-11-04: bump only if defaults or code change. PR 5 changed neither, so it has no bump.
 2. **PR 4 size threshold:** settled 2026-11-03 at about 300 changed lines in 6 files or fewer. There is no post-PR 4 benchmark; check it against usage data from real runs.
 3. **PR 6 reviewer:** which model, and should a subagent's tokens count toward the Claude-side numbers in `usage.js claude`?
-4. **PR 7 scope:** which of A–D go in, and in one PR or several? A and B change how every run works; C is wording; D is a default.
-5. **PR 7 A:** stubs and tests written before the run marker, or a guard exception for the files a spec lists?
-6. **PR 7 B:** resume across all steps, or start fresh when a step touches different files from the last one?
-7. **PR 7 D:** new `maxTurns` default (30?), or turns scaled by step size?
+4. **PR 7 scope:** settled 2026-11-04: A, B and D in one PR (0.6.0); C is left out.
+5. **PR 7 A:** settled 2026-11-04: the guard allows paths registered with `run-marker.js allow`, in new and existing files.
+6. **PR 7 B:** settled 2026-11-04: resume the previous step's session only when the planned file lists overlap.
+7. **PR 7 D:** settled 2026-11-04: scaled at ceil(lines / 12), floor 10, with `maxTurns` as a hard cap (default 60).
