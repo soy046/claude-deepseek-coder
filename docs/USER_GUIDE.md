@@ -263,9 +263,15 @@ Claude also follows some rules of its own during a run: it never deletes run fol
 
 DeepSeek bills your DeepSeek account; Claude's planning and review count against your Claude plan. At the end of each run Claude shows both: DeepSeek's tokens for every coder run, with an estimated cost when `deepseekPricing` is set, and a best-effort count of Claude's own tokens. You can print the DeepSeek table at any time by running `node "<plugin folder>/scripts/usage.js" <run folder>` from your project root. Don't use `total_cost_usd` in the JSON log: it is computed at Claude prices and adds up across fix rounds.
 
+**Which Claude model should I use?**
+
+Claude plans, writes the specs and reviews every diff on the model of your Claude Code session; the plugin doesn't change it. Pick it with `/model` before you start the run. Sonnet costs less than Opus. Use Opus for goals that need careful design or a hard review. The model setting in `config.json` only applies to DeepSeek.
+
 **How do I change the DeepSeek model?**
 
-Set `model` in `.deepseek-coder/config.json` (this wins), or set the `DEEPSEEK_MODEL` environment variable. `deepseek-flash` and `deepseek-v4-pro` exist. A `[1m]` after a model name, as in `deepseek-flash[1m]`, means the 1M-token context version. The default is `deepseek-flash[1m]`.
+Set `model` in `.deepseek-coder/config.json` (this wins), or set the `DEEPSEEK_MODEL` environment variable. DeepSeek's API lists two models, `deepseek-flash` and `deepseek-v4-pro`. Both have a 1M-token context. The default is `deepseek-flash[1m]`.
+
+Keep the `[1m]` suffix. It is for Claude Code, not DeepSeek: it tells Claude Code that the model has a 1M-token context. Without it, Claude Code assumes 200k tokens for a model it doesn't know, and compacts the coder's context much earlier than it needs to. So write `deepseek-v4-pro[1m]`, not `deepseek-v4-pro`. The name `deepseek-v4-flash` is also accepted, but it isn't on DeepSeek's model list, so use `deepseek-flash[1m]` instead.
 
 **Should I commit `.deepseek-coder/`?**
 
