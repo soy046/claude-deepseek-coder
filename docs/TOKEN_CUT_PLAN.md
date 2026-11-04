@@ -20,7 +20,7 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 1 (+1b) | Measure usage on both sides | 0.2.1 | Merged (#2) |
 | 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-landed (#5) |
 | 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Merged (#6) |
-| 4 | Size check before delegating small tasks | 0.5.0 | Built 2026-11-03 on `feat/size-check` |
+| 4 | Size check before delegating small tasks | 0.5.0 | Merged (#7); one large-benchmark run done (see Results) |
 | 5 | Model names and the planner model | not set | Not started |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
 
@@ -172,6 +172,7 @@ The control shows that delegating a ~130-line task costs Claude about 3× the ou
 | bench-large-0.2.1-run1 | 37 | 66,688 | 135,463 | 4,566,983 | 113,824 / 952,832 / 48,359 | 60 | 0.6526 CNY | 0 | 2,159 | 94/94 | 104/104 pass | 71 min |
 | bench-large-0.2.1-run2 | 43 | 47,129 | 114,959 | 5,058,689 | 107,226 / 897,280 / 46,025 | 53 | 0.6185 CNY | 0 | 2,249 | 94/94 | 112/112 pass | 16 min |
 | **Delegated average (0.2.1)** | 40 | 56,909 | 125,211 | 4,812,836 | 110,525 / 925,056 / 47,192 | 57 | 0.6356 CNY | 0 | 2,204 | 94/94 | pass | 16–71 min |
+| bench-large-0.5.0-run1 | 45 | 36,086 | 99,087 | 5,027,209 | 109,346 / 824,576 / 52,758 | 51 | 0.6737 CNY | 0 | 2,196 | 94/94 | 103/103 pass | 10.3 min |
 
 Wall time is first to last transcript entry, including time spent answering questions. Transcripts and `run.json` files are in `D:\projects\bench-results\large\claude-run1` and `claude-run2`.
 
@@ -213,6 +214,18 @@ Most of the gap between the runs is step 3g. Run 2 re-typed the full diff for st
 - Next: a 0.3.0 arm (2 runs) to measure PR 2 directly. A task with a short goal and a lot of code (such as "port this module" or "add CRUD endpoints for these 8 models"), where the spec can't be nearly the code, would test where delegation does pay off.
 
 Transcripts and run folders: `D:\projects\bench-results\large\0.2.1-run1` and `0.2.1-run2`.
+
+**Delegated run on 0.5.0 (2026-11-03).** One run with PRs 2–4 in, set up like the 0.2.1 runs. The only difference is a committed `.claude/settings.json` holding the two `run-check.js` allow rules. Five steps, no fix rounds, no compaction, 103/103 own tests and 94/94 on the spot check. Claude's output was 36,086 tokens (9,656 planning, 26,430 after the run marker). That is 37% below the 0.2.1 delegated average and 23% below the better 0.2.1 run, and only 4% above the Claude-only average (34,544), which is within noise. Cache writes fell to 99k (from 125k); cache reads stayed about the same (5.0M).
+
+- Reply text after the run marker was 5,600 characters, against 64,700 and 18,300 in the 0.2.1 runs, so `showDiff: stat` removed the diff re-typing as intended.
+- Specs were 24,900 characters for 60,200 characters of code, a little smaller than on 0.2.1 (28,400 and 30,900).
+- 13 planner questions (4 before the run, 9 at the step specs), all answered with the recommended option.
+- DeepSeek took 51 turns (at most 12 in one step) for 0.67 CNY, about the same as on 0.2.1.
+- Wall time was 10.3 minutes.
+
+It is a single run, and the large 0.2.1 runs spread by 34%, so read the 37% drop as likely real but not yet measured. Even so, on this tightly specified task delegation now breaks even with Claude alone on output tokens, where 0.2.1 cost 1.65× as much. The post-PR 6 benchmark (`reviewModel` unset arm, 2 runs) gives the proper measurement.
+
+Transcript and run folder: `D:\projects\bench-results\large\0.5.0-run1`.
 
 ## PR 3: short test output, diff-only review and smaller fix rounds (0.4.0)
 
