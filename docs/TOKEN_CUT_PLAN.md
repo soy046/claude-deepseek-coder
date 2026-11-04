@@ -24,7 +24,8 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 5 | Model names and the planner model | none (docs only) | Built 2026-11-04, branch `docs/model-names` |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03); skipped for now (2026-11-04), PR 7 goes first |
 | 7 | Shorter specs: interface + tests, one DeepSeek session per run, scaled turns | 0.6.0 | Merged (#10); one large-benchmark run done (see Results) |
-| 7b | Stubs only: the planner writes no tests | 0.6.1 | Built 2026-11-04 on `feat/stubs-only` |
+| 7b | Stubs only: the planner writes no tests | 0.6.1 | Merged (#11); one large-benchmark run done (see Results) |
+| 7c | Drop the stubs and `run-marker.js allow`; keep resume, scaled turns and reply counting | 0.6.2 | Built 2026-11-04 on `feat/drop-stubs` |
 
 ## Decisions
 
@@ -176,6 +177,7 @@ The control shows that delegating a ~130-line task costs Claude about 3× the ou
 | **Delegated average (0.2.1)** | 40 | 56,909 | 125,211 | 4,812,836 | 110,525 / 925,056 / 47,192 | 57 | 0.6356 CNY | 0 | 2,204 | 94/94 | pass | 16–71 min |
 | bench-large-0.5.0-run1 | 45 | 36,086 | 99,087 | 5,027,209 | 109,346 / 824,576 / 52,758 | 51 | 0.6737 CNY | 0 | 2,196 | 94/94 | 103/103 pass | 10.3 min |
 | bench-large-0.6.0-run1 | 43 | 57,395 | 124,275 | 5,519,143 | 105,448 / 512,128 / 25,747 | 30 replies, 33 tool calls | 0.4374 CNY | 0 | 1,995 | 94/94 | 85/85 pass | 13.7 min |
+| bench-large-0.6.1-run1 | 47 | 41,378 | 110,766 | 5,758,678 | 124,996 / 1,391,744 / 74,010 | 54 replies, 70 tool calls | 0.8977 CNY | 0 | 2,743 | 94/94 | 124/124 pass | 18.5 min |
 
 Wall time is first to last transcript entry, including time spent answering questions. Transcripts and `run.json` files are in `D:\projects\bench-results\large\claude-run1` and `claude-run2`.
 
@@ -241,6 +243,18 @@ Transcript and run folder: `D:\projects\bench-results\large\0.5.0-run1`.
 It is a single run, but +59% is well beyond the 34% spread, and its cause is visible in the transcript. **Decision (2026-11-04):** keep the stubs, drop the planner-written tests (PR 7b, 0.6.1): DeepSeek writes the tests against prose acceptance criteria, as on 0.5.0. Run 2 on 0.6.0 is skipped; one run on 0.6.1 (`D:\projects\bench-large-0.6.1-run1`) replaces it.
 
 Transcript and run folder: `D:\projects\bench-results\large\0.6.0-run1`.
+
+**Delegated run on 0.6.1 (2026-11-04).** One run with PR 7b (stubs, no planner tests), set up like the 0.6.0 run. Five steps, no fix rounds, no compaction, 124/124 own tests and 94/94 on the spot check. Claude's output was 41,378 tokens (13,973 planning, 27,405 after the run marker): 28% below 0.6.0, but 15% above the 0.5.0 run, which is within the 34% spread.
+
+- **After the run marker, 0.6.1 matches 0.5.0** (27,405 against 26,430). The whole-session gap is planning: 11 questions before the run against 4, and that number varies between runs.
+- **The stubs did not shorten the specs.** With the acceptance criteria back in prose, specs grew to 29,200 characters (24,900 on 0.5.0), and the planner wrote 5,200 characters of stubs on top.
+- DeepSeek wrote more: 2,743 added lines and 124 tests, for 74,010 output tokens and 0.90 CNY.
+- B never triggered (no shared files). D: limits of 20, 30, 30, 28 and 13; the most any step used was 13 replies. No `error_max_turns`.
+- 14 planner questions (11 before the run, 3 at the step specs). Wall time 18.5 minutes.
+
+**Decision (2026-11-04):** on this benchmark the stubs save nothing and add a mechanism, so PR 7c (0.6.2) removes them along with `run-marker.js allow` and the guard allowlist. Specs go back to 0.5.0's prose "Required interfaces". B (resume), D (scaled turns) and reply counting stay. One run on 0.6.2 (`D:\projects\bench-large-0.6.2-run1`) checks that it matches 0.5.0.
+
+Transcript and run folder: `D:\projects\bench-results\large\0.6.1-run1`.
 
 ## PR 3: short test output, diff-only review and smaller fix rounds (0.4.0)
 
@@ -385,6 +399,10 @@ PR 6 is skipped for now; PR 7 goes first. A, B and D go in one PR with one bump,
 ## PR 7b: stubs only (0.6.1, decided 2026-11-04)
 
 After the 0.6.0 large run, the planner keeps writing interface stubs (registered with `run-marker.js allow`) but writes no tests. The spec template drops the Test files section and the acceptance criteria are all prose again; DeepSeek writes the tests, the review again says "let DeepSeek add the tests" when coverage is thin, and fix specs go back to three sections. B and D are unchanged. Built by Claude directly; measured by one large-benchmark run on 0.6.1.
+
+## PR 7c: drop the stubs (0.6.2, decided 2026-11-04)
+
+After the 0.6.1 large run, idea A is removed entirely. The planner writes no source files again: step specs use 0.5.0's template with a prose "Required interfaces" section, and the implement-ready check is back to "every interface is written out in full". `run-marker.js allow`, the marker's `allowed` list, the guard's allowlist check and their 12 tests are deleted, so the guard allows only the run folder and the config, as on 0.5.0. Kept from PR 7: B (resume on overlapping planned files, with resumed specs allowed to refer back), D (scaled turns, `--turns`, `maxTurns` as a cap with default 60, the stop-exploring prompt line, the `error_max_turns` rule) and reply counting. Built by Claude directly; measured by one large-benchmark run on 0.6.2.
 
 ## Lessons from PRs 1 and 2
 

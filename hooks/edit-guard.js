@@ -76,7 +76,6 @@ if (typeof marker.runDir === 'string' && marker.runDir && t.startsWith(norm(mark
 const plans = norm(plansDir) + path.sep;
 const config = norm(path.join(projectDir, '.deepseek-coder', 'config.json'));
 if (t.startsWith(plans) || t === config) process.exit(0);
-if (Array.isArray(marker.allowed) && marker.allowed.some((a) => typeof a === 'string' && norm(a) === t)) process.exit(0);
 
 process.stderr.write(
   `deepseek-coder: a delegation run is active (${marker.runDir || 'unknown run'}), so the planner may not edit ${target}. ` +

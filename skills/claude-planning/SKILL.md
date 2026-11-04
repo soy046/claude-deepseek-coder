@@ -79,8 +79,7 @@ Before you show a spec (`step-NN.md` or `step-NN-fixK.md`), check it against thi
 fix the spec, or ask the user if the fix needs a decision.
 
 - Every file to create or change is named by its exact path.
-- Every interface is in a stub file on disk with its full signature: name, parameters, types, return value,
-  errors, and a body that throws `not implemented`.
+- Every interface is written out in full: name, parameters, types, return value, errors.
 - Every behaviour, edge case and error case decided in `plan.md` that belongs to this step is in the spec.
 - Every acceptance criterion can be checked by reading the diff or running a verify command.
 - Every verify command is in `allowedCommands`.

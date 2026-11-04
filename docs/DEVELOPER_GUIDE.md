@@ -25,13 +25,13 @@ Keep the quotes: Node expands the pattern itself, so the command works the same 
 | `skills/claude-planning/SKILL.md` | The planner's rules: ask instead of inferring, write `plan.md`, check each spec, review specs with the user. `delegate.md` tells Claude to follow it. |
 | `skills/deepseek-delegation/SKILL.md` | Lets Claude start a run on its own; it points to `delegate.md`. |
 | `scripts/resolve-config.js` | Reads and validates `.deepseek-coder/config.json` and fills in defaults. Prints the whole config, one key (`--get`), or a turn limit capped at `maxTurns` (`--turns <N>`). |
-| `scripts/run-marker.js` | Starts, refreshes, stops and reports the run marker. `start` also writes the run folder's `run.json`; `allow <path>...` adds files the planner may write during the run to the marker's `allowed` list. |
+| `scripts/run-marker.js` | Starts, refreshes, stops and reports the run marker. `start` also writes the run folder's `run.json`. |
 | `scripts/deepseek-coder.ps1`, `scripts/deepseek-coder.sh` | Run one spec on DeepSeek through a headless Claude Code process (Windows and macOS/Linux). |
 | `scripts/print-result.js` | Turns a coder log into the summary the planner reads, including the `TURNS` and `USAGE` lines, and appends the run to `usage.jsonl`. The runners pass `--since <start time>` and `--cap <turn limit>`; the reply and tool-call counts come from `usage.js` `coderReplies`, which reads the coder's session transcript (`<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session id>.jsonl`), counting only messages since the start time because `--resume` reuses the session. |
 | `scripts/usage.js` | Token usage: the DeepSeek table for a run folder (`usage.js <run folder>`) and the Claude table from the session transcript (`usage.js claude <run folder>`). |
 | `scripts/step-diff.js` | Working-tree snapshots through a private git index, and change lists between them: `snap`, `diff`, `stat` (one step) and `run` (the whole run, with step numbers). |
 | `scripts/run-check.js` | Runs one verify command for the planner through the shell with `NO_COLOR=1`. Prints one `PASS` line, or `FAIL`, the last 60 lines and the log path; appends the full ANSI-stripped output to the log; exits with the command's exit code. |
-| `hooks/hooks.json`, `hooks/edit-guard.js` | The edit guard: during a run, blocks the planner from editing source files other than those in the marker's `allowed` list, and records the planner's transcript path in `run.json`. |
+| `hooks/hooks.json`, `hooks/edit-guard.js` | The edit guard: during a run, blocks the planner from editing source files, and records the planner's transcript path in `run.json`. |
 
 How they call each other:
 
@@ -43,7 +43,7 @@ How they call each other:
 
 ## Run folder files
 
-Each run gets a folder `.deepseek-coder/plans/<date-time>-<slug>/`. The run marker itself is `.deepseek-coder/plans/.run-active`, outside the run folder. It holds `startedAt`, `updatedAt`, `runDir` and, once the planner registers files, `allowed`.
+Each run gets a folder `.deepseek-coder/plans/<date-time>-<slug>/`. The run marker itself is `.deepseek-coder/plans/.run-active`, outside the run folder. It holds `startedAt`, `updatedAt` and `runDir`.
 
 | File | Written by | Contents |
 |---|---|---|
