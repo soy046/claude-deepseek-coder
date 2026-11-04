@@ -1,8 +1,8 @@
 # Plan: cutting Claude-side token use
 
-This plan covers five pull requests that reduce the tokens the Claude planner spends during a delegation run, without making DeepSeek's results worse. It records the decisions made so far, what is finished, and what each remaining PR will change.
+This plan covers seven pull requests that reduce the tokens the Claude planner spends during a delegation run, without making DeepSeek's results worse. It records the decisions made so far, what is finished, and what each remaining PR will change.
 
-Decisions were settled on 2026-10-29 (PRs 3 and 4 on 2026-11-03). Status is as of 2026-11-03. Line numbers refer to `main` with PR 2 re-landed.
+Decisions were settled on 2026-10-29 (PRs 3 and 4 on 2026-11-03). Status is as of 2026-11-04. Line numbers refer to `main` with PR 2 re-landed.
 
 ## Why
 
@@ -21,8 +21,9 @@ A review of the plugin (2026-10-27) found that the planner gave back much of wha
 | 2 | One diff per step, from working-tree snapshots | 0.3.0 | Merged (#3), reverted (#4) to keep the baseline on 0.2.1, re-landed (#5) |
 | 3 | Short test output, diff-only review, smaller fix rounds (plus a gitignore fix) | 0.4.0 | Merged (#6) |
 | 4 | Size check before delegating small tasks | 0.5.0 | Merged (#7); one large-benchmark run done (see Results) |
-| 5 | Model names and the planner model | not set | Not started |
+| 5 | Model names and the planner model | none (docs only) | Built 2026-11-04, branch `docs/model-names` |
 | 6 | Optional smaller review model | not set | Proposed (2026-11-03) |
+| 7 | Shorter specs: interface + tests, one DeepSeek session per run | not set | Proposed (2026-11-04) |
 
 ## Decisions
 
@@ -292,8 +293,21 @@ Decided 2026-11-03. Built directly by Claude on branch `feat/size-check`, not as
 ## PR 5: model names and the planner model
 
 - Run a one-line test spec with `deepseek-flash[1m]`, `deepseek-flash` and `deepseek-v4-flash`. It costs a few cents of DeepSeek usage; ask first.
-- Change the default `model` only if the test shows a difference.
+- Change the default `model` only if the test shows a difference: a name fails, maps to another model, or is clearly cheaper or faster (decided 2026-11-04).
 - Document that planning and review run on the user's session model, and that Sonnet is the cheaper choice for the planner.
+
+**Result (2026-11-04).** The spec "create `hello.txt` containing `hello`" was run through `deepseek-coder.sh` (`maxTurns` 5) in a new temp repo for each name:
+
+| `model` | Status | Turns | Input (cache read) | Output | API time | Claude Code context window |
+|---|---|---|---|---|---|---|
+| `deepseek-flash[1m]` | success | 2 | 13,368 (13,184) | 215 | 3.3 s | 1,000,000 |
+| `deepseek-flash` | success | 3 | 13,548 (26,624) | 356 | 4.4 s | 200,000 |
+| `deepseek-v4-flash` | success | 2 | 13,366 (13,184) | 195 | 3.1 s | 200,000 |
+
+- DeepSeek's `GET /models` lists only `deepseek-flash` (DeepSeek-V4.1-Flash, 1,048,576-token context) and `deepseek-v4-pro` (also 1M). `deepseek-v4-flash` is accepted but not listed.
+- Cost and speed differ only by one extra turn, within the noise of one sample each.
+- The `[1m]` suffix only matters to Claude Code: without it, Claude Code takes an unknown model to have a 200k context, and the runner sets no `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, so the coder compacts far earlier than the model needs.
+- **Outcome:** the default stays `deepseek-flash[1m]`. No code or default changed, so no version bump (open question 1). Docs: the user-guide FAQ "How do I change the DeepSeek model?" now says to keep `[1m]` and avoid `deepseek-v4-flash`, and a new FAQ "Which Claude model should I use?" covers the planner model.
 
 ## PR 6: optional smaller review model (proposed 2026-11-03)
 
@@ -307,6 +321,41 @@ The third 2026-10-28 review idea. Not decided. Its effect is told apart from PRs
 - **Measure:** the `reviewModel` set arm of the post-PR 6 large benchmark (×2), against the `reviewModel` unset arm. Compare Claude output tokens, the reviewer model's tokens (priced separately), fix rounds and spot-check score.
 - **Docs:** the config tables, and a note in the user guide on the trade-off.
 
+## PR 7: shorter specs (proposed 2026-11-04)
+
+Not decided. With diff re-typing gone (PR 2), specs are the largest planner output left that delegation adds: about 25–31k characters per large run (roughly 8–9k tokens), for 56–60k characters of code. On a tightly specified task the spec is nearly the code, so this is where the remaining gap to Claude alone sits.
+
+**Data from a real run (2026-11-04).** A three-step run in another project (`claude_wechat_demo`, the home web page's 今日要做 list, about 1,170 added lines) used 19,600 characters of specs: step specs of 6,550 / 5,917 / 7,144 characters with full interfaces, routes and file:line anchors. All three coder runs ended with `error_max_turns` at 21 turns (`maxTurns` 20) after the code was done but before the report, so no `VERIFY` lines came back and the planner ran the build itself each time. The diffs needed no fix rounds. Long, exact specs did not stop DeepSeek from spending turns reading around, and 20 turns is short for a 350–550-line step. DeepSeek cost 1.0 CNY in all.
+
+Ideas, from the 2026-11-03 discussions (the parallel-workers chat and the Tobs bot-team video):
+
+**A. Interface + tests instead of prose (the user's idea, "Claude 只写接口和架构").**
+- The planner writes each step's interfaces as real code (a stub file with exact signatures, types and doc comments, bodies throwing `not implemented`) and its acceptance tests as runnable test files. The spec shrinks to the goal, pointers to those files, constraints and out of scope.
+- DeepSeek fills in the bodies until the tests pass; the `VERIFY` line of the test command is the acceptance check.
+- Why it might be cheaper: what the planner writes is executable, so it needn't describe behaviour twice (once in prose, once in criteria), and the tests catch more than reading a diff does, which keeps review light.
+- Why it might not be: test code is planner output too, and can be as long as the prose it replaces. It only works where `allowedCommands` includes a test runner (the 2026-11-04 project had only `bun build`, so it would fall back to prose).
+- Conflict to settle: the edit guard blocks the planner from writing source files during a run. Either the planner writes all stubs and tests before `run-marker start` (in Plan), or the guard allows the files a spec lists under a new "Planner writes" section.
+
+**B. One DeepSeek session per run.**
+- Today each step starts a new DeepSeek session and only fix rounds resume it. If step 2 onwards resumed step 1's `SESSION_ID`, specs wouldn't have to restate project facts, conventions and earlier steps' interfaces: "same conventions as before; build on `TodoStore` from step 01".
+- DeepSeek cache reads are cheap (0.04 CNY per 1M at peak, against 2 for misses), so a growing session mostly costs cache reads.
+- Risks: the session context keeps growing (more input per turn, and DeepSeek may lean on stale assumptions from earlier steps); a failed or confused step carries into the next; `maxTurns` is per coder run, so it doesn't change.
+- Final fixes still start a new session, as PR 3 decided.
+
+**C. Spec writing rules (planning skill and `delegate.md` template).**
+- Point to the goal and `plan.md` instead of restating them; reference existing code by `file:line` instead of pasting or paraphrasing it.
+- A size guideline in the implement-ready check (for example: a spec longer than about a quarter of the code it should produce is a warning sign), not a hard limit.
+- Ask only what the goal really leaves open: the large runs asked 12–13 questions against Claude alone's 4.
+
+**D. Turn limit (from the 2026-11-04 run).**
+- Raise the default `maxTurns` (to 30?), or scale it with the step's expected size.
+- Runner prompt: "Stop exploring once the spec's anchors answer your question; leave turns for the Verify commands and the report."
+- `delegate.md`: say explicitly that an `error_max_turns` run whose diff is complete is reviewed like a normal one (the step-diff is still valid; missing `VERIFY` lines are run once through `run-check.js`). The 2026-11-04 run did this by hand.
+
+**Measure:** a large-benchmark arm (×2) after PR 7, against the post-PR 6 arm. Compare spec characters, Claude output tokens, DeepSeek turns and cost, fix rounds and the spot-check score. A, B and C can be measured together; D is a default change and is judged by `error_max_turns` counts in real runs.
+
+**Docs:** the spec template in `delegate.md`, the planning skill's sections 3–4, the config table (`maxTurns` default), and a user-guide note on what a spec now looks like.
+
 ## Lessons from PRs 1 and 2
 
 - `usage` in a coder log covers one whole coder run. `modelUsage` and `total_cost_usd` add up across `--resume` and use Claude prices, so never read them.
@@ -318,6 +367,10 @@ The third 2026-10-28 review idea. Not decided. Its effect is told apart from PRs
 
 ## Open questions
 
-1. **PR 5 version:** bump only if defaults or code change, or always?
+1. **PR 5 version:** settled 2026-11-04: bump only if defaults or code change. PR 5 changed neither, so it has no bump.
 2. **PR 4 size threshold:** settled 2026-11-03 at about 300 changed lines in 6 files or fewer. There is no post-PR 4 benchmark; check it against usage data from real runs.
 3. **PR 6 reviewer:** which model, and should a subagent's tokens count toward the Claude-side numbers in `usage.js claude`?
+4. **PR 7 scope:** which of A–D go in, and in one PR or several? A and B change how every run works; C is wording; D is a default.
+5. **PR 7 A:** stubs and tests written before the run marker, or a guard exception for the files a spec lists?
+6. **PR 7 B:** resume across all steps, or start fresh when a step touches different files from the last one?
+7. **PR 7 D:** new `maxTurns` default (30?), or turns scaled by step size?
