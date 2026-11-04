@@ -1,10 +1,12 @@
 # deepseek-coder.ps1 - runs one coding step on DeepSeek through a headless Claude Code process.
 # Windows PowerShell 5.1. Run from the project root:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File <plugin>/scripts/deepseek-coder.ps1 -SpecFile <spec.md> [-ResumeSession <id>]
+#   powershell -NoProfile -ExecutionPolicy Bypass -File <plugin>/scripts/deepseek-coder.ps1 -SpecFile <spec.md> [-ResumeSession <id>] [-MaxTurns <N>]
+# -MaxTurns N: this run's turn limit, capped at maxTurns (default: maxTurns).
 # Exit codes: 0 success, 1 failure, 3 refused by the recursion guard.
 param(
     [Parameter(Mandatory = $true)][string]$SpecFile,
-    [string]$ResumeSession
+    [string]$ResumeSession,
+    [string]$MaxTurns
 )
 $ErrorActionPreference = 'Stop'
 
@@ -32,10 +34,19 @@ $OutputEncoding = $utf8
 $cfgJson = & node (Join-Path $scripts 'resolve-config.js') --project $projectDir
 if ($LASTEXITCODE -ne 0) { exit 1 }  # resolve-config.js already printed the reason
 $cfg = ($cfgJson -join "`n") | ConvertFrom-Json
+if ($MaxTurns) {
+    $turnsOut = & node (Join-Path $scripts 'resolve-config.js') --project $projectDir --turns $MaxTurns
+    if ($LASTEXITCODE -ne 0) { Fail "invalid -MaxTurns: $MaxTurns" }
+    $turns = ($turnsOut -join '').Trim()
+}
+else {
+    $turns = "$($cfg.maxTurns)"
+}
 
 $role = @'
 You are the CODING agent. A separate planner wrote the spec you receive on stdin.
 Implement exactly what the spec says. Do not redesign or expand the scope.
+Stop exploring once the spec and the files it names answer your question; leave turns for the Verify with commands and your report.
 Never delegate work and never run the deepseek-coder scripts.
 You may only run the shell commands you are allowed. If a command you need is denied, say so in your report.
 When finished, report: files changed, commands run and their results, and anything you could not do.
@@ -69,7 +80,7 @@ $cliArgs = @(
     '--append-system-prompt-file', $promptFile,
     '--permission-mode', 'acceptEdits',
     '--strict-mcp-config',
-    '--max-turns', "$($cfg.maxTurns)",
+    '--max-turns', $turns,
     '--output-format', 'json',
     '--disallowedTools', 'Bash(powershell:*)', 'Bash(pwsh:*)', 'Bash(bash:*)', 'Bash(sh:*)', 'Bash(git push:*)',
     'PowerShell', 'WebFetch', 'WebSearch', 'Skill', 'Agent',
