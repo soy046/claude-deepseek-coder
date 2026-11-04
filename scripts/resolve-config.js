@@ -6,6 +6,7 @@
 // Usage:
 //   node resolve-config.js [--project <dir>]              full resolved config as JSON
 //   node resolve-config.js [--project <dir>] --get <key>  one value; arrays print one item per line, objects and null as JSON
+//   node resolve-config.js [--project <dir>] --turns <N>   N capped at maxTurns (a per-step turn limit)
 // Extra computed keys for --get: allowedTools, smallModel
 
 'use strict';
@@ -15,7 +16,7 @@ const path = require('path');
 const DEFAULTS = {
   allowedCommands: [],
   model: 'deepseek-flash[1m]',
-  maxTurns: 20,
+  maxTurns: 60,
   extraInstructions: '',
   approvalMode: 'step',
   gitMode: 'commit',
@@ -37,10 +38,11 @@ function fail(msg) {
 }
 
 function parseArgs(argv) {
-  const args = { project: process.cwd(), get: null };
+  const args = { project: process.cwd(), get: null, turns: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--project') args.project = argv[++i];
     else if (argv[i] === '--get') args.get = argv[++i];
+    else if (argv[i] === '--turns') args.turns = argv[++i];
     else fail(`unknown argument "${argv[i]}"`);
   }
   return args;
@@ -120,8 +122,12 @@ function resolve(projectDir) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (args.turns !== null && args.get !== null) fail('--turns and --get cannot be used together');
 const cfg = resolve(path.resolve(args.project));
-if (args.get) {
+if (args.turns !== null) {
+  if (!/^[1-9][0-9]*$/.test(args.turns)) fail(`--turns must be a positive integer, got "${args.turns}"`);
+  process.stdout.write(String(Math.min(Number(args.turns), cfg.maxTurns)));
+} else if (args.get) {
   if (!(args.get in cfg)) fail(`unknown key "${args.get}"`);
   const v = cfg[args.get];
   process.stdout.write(Array.isArray(v) ? v.join('\n') : typeof v === 'object' ? JSON.stringify(v) : String(v));

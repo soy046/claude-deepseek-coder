@@ -101,11 +101,45 @@ test('existing keys keep their --get output', (t) => {
 
   const turns = run(dir, ['--get', 'maxTurns'], env);
   assert.equal(turns.status, 0);
-  assert.equal(turns.stdout, '20');
+  assert.equal(turns.stdout, '60');
 
   const mode = run(dir, ['--get', 'approvalMode'], env);
   assert.equal(mode.status, 0);
   assert.equal(mode.stdout, 'step');
+});
+
+test('--turns below the cap prints it unchanged', (t) => {
+  const dir = makeProject({});
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = run(dir, ['--turns', '25'], cleanEnv());
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '25');
+});
+
+test('--turns above the cap prints the cap', (t) => {
+  const dir = makeProject({ maxTurns: 30 });
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = run(dir, ['--turns', '50'], cleanEnv());
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '30');
+});
+
+test('--turns rejects non-positive-integer values', (t) => {
+  const dir = makeProject({});
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const value of ['0', '-3', '2.5', 'abc', '']) {
+    const r = run(dir, ['--turns', value], cleanEnv());
+    assert.equal(r.status, 1, value);
+    assert.match(r.stderr, /--turns must be a positive integer/, value);
+  }
+});
+
+test('--turns with --get is an error', (t) => {
+  const dir = makeProject({});
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const r = run(dir, ['--turns', '10', '--get', 'maxTurns'], cleanEnv());
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--turns and --get cannot be used together/);
 });
 
 test('missing showDiff resolves to stat', (t) => {
