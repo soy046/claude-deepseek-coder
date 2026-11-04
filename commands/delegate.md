@@ -18,7 +18,7 @@ Run every command below from the project root. Plugin scripts:
 | Purpose | Command |
 |---|---|
 | Resolved config | `node "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-config.js"` |
-| Run marker | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-marker.js" <start "<run folder>" \| allow <path>... \| stop \| status>` |
+| Run marker | `node "${CLAUDE_PLUGIN_ROOT}/scripts/run-marker.js" <start "<run folder>" \| stop \| status>` |
 | Coder, Windows | `powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.ps1" -SpecFile "<spec>" [-ResumeSession <id>] [-MaxTurns <N>]` |
 | Coder, macOS/Linux | `bash "${CLAUDE_PLUGIN_ROOT}/scripts/deepseek-coder.sh" --spec-file "<spec>" [--resume-session <id>] [--max-turns <N>]` |
 | Usage tables | `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" "<run folder>"` (DeepSeek) and `node "${CLAUDE_PLUGIN_ROOT}/scripts/usage.js" claude "<run folder>"` (Claude) |
@@ -105,30 +105,21 @@ Exit code 0 means the run finished, 1 means it failed (including hitting the tur
 
 ## 3. For each step NN (01, 02, ...)
 
-a. **Stubs and spec.** First write this step's interfaces as stub files:
-   - Register every file you will write with marker `allow <path>...` before writing it; the edit guard blocks the rest.
-   - **Stubs:** every new or changed function, class, method, route or type, with its exact signature, types and doc
-     comment, and a body that throws `not implemented`. Put them where the code belongs, in new or existing files.
-     A step with no new interface (docs, config) has no stubs.
-   - Write nothing else in source files, and no tests: the bodies and the tests are DeepSeek's work.
-
-   Then write `<run folder>/step-NN.md`:
+a. **Spec.** Write `<run folder>/step-NN.md`:
 
 ```markdown
 # Step NN: <title>
 ## Goal
 ## Files to create or change
-## Stub files (written by the planner; fill in the bodies)
-## Acceptance criteria
+## Required interfaces (exact signatures, types, routes, schemas)
 ## Constraints (style, libraries to use or avoid)
+## Acceptance criteria
 ## Verify with (only commands from allowedCommands)
 ## Out of scope
 ```
 
-   "Files to create or change" lists every file DeepSeek edits, stub files and test files included. A section with
-   nothing in it says `None`. A step that resumes the previous step's session may say "same conventions as step
-   NN-1" and refer to earlier steps' files and interfaces instead of restating them; a step in a new session restates
-   everything it needs.
+   A step that resumes the previous step's session may say "same conventions as step NN-1" and refer to earlier
+   steps' files and interfaces instead of restating them; a step in a new session restates everything it needs.
 
    Then run the implement-ready check (planning skill, section 4).
 
@@ -262,7 +253,6 @@ edit files.
 
 ## Rules
 
-- Never edit source files yourself during a run. Only the run folder, `.deepseek-coder/config.json`, and the stub
-  files you register with marker `allow` (3a) are yours.
+- Never edit source files yourself during a run. Only the run folder and `.deepseek-coder/config.json` are yours.
 - Never delete run folders or spec files.
 - Never write the API key into a file or a command.
